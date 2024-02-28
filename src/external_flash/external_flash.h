@@ -11,7 +11,7 @@
 #define __EXTERNAL_FLASH_H__
 
 #include <stdint.h>
-#include "font.h"
+#include <zephyr/kernel.h>
 
 //SPIÒý½Å¶¨Òå
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(spi3), okay)

@@ -13,8 +13,6 @@
 #include <zephyr/device.h>
 #include <stdio.h>
 #include <string.h>
-#include "img.h"
-#include "font.h"
 #include "external_flash.h"
 #ifdef CONFIG_PPG_SUPPORT
 #include "max_fw_data_674_1_1_0.h"
