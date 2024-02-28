@@ -13,19 +13,10 @@
 #include <stdio.h>
 #include "datetime.h"
 #include "settings.h"
-#include "lcd.h"
-#include "font.h"
-#ifdef CONFIG_IMU_SUPPORT
-#include "Lsm6dso.h"
-#endif
 #include "max20353.h"
 #ifdef CONFIG_PPG_SUPPORT
 #include "max32674.h"
 #endif
-#ifdef CONFIG_TEMP_SUPPORT
-#include "temp.h"
-#endif
-#include "screen.h"
 #include "uart_ble.h"
 #include "ucs2.h"
 #include "logger.h"
@@ -247,9 +238,6 @@ void DateIncrease(sys_date_timer_t *date, uint32_t days)
 	}
 
 	(*date).week = GetWeekDayByDate((*date));
-
-	if(screen_id == SCREEN_ID_IDLE)
-		scr_msg[screen_id].para |= (SCREEN_EVENT_UPDATE_DATE|SCREEN_EVENT_UPDATE_WEEK);
 }
 
 void DateDecrease(sys_date_timer_t *date, uint32_t days)
@@ -333,9 +321,6 @@ void DateDecrease(sys_date_timer_t *date, uint32_t days)
 	}
 
 	(*date).week = GetWeekDayByDate((*date));
-
-	if(screen_id == SCREEN_ID_IDLE)
-		scr_msg[screen_id].para |= (SCREEN_EVENT_UPDATE_DATE|SCREEN_EVENT_UPDATE_WEEK);
 }
 
 void TimeIncrease(sys_date_timer_t *date, uint32_t minutes)
@@ -370,9 +355,6 @@ void TimeIncrease(sys_date_timer_t *date, uint32_t minutes)
 	}
 
 	(*date).week = GetWeekDayByDate((*date));
-	
-	if(screen_id == SCREEN_ID_IDLE)
-		scr_msg[screen_id].para |= (SCREEN_EVENT_UPDATE_DATE|SCREEN_EVENT_UPDATE_WEEK);	
 }
 
 void TimeDecrease(sys_date_timer_t *date, uint32_t minutes)
@@ -409,15 +391,6 @@ void TimeDecrease(sys_date_timer_t *date, uint32_t minutes)
 	}
 
 	(*date).week = GetWeekDayByDate((*date));
-	
-	if(screen_id == SCREEN_ID_IDLE)
-		scr_msg[screen_id].para |= (SCREEN_EVENT_UPDATE_DATE|SCREEN_EVENT_UPDATE_WEEK);	
-}
-
-void RedrawSystemTime(void)
-{
-	if(screen_id == SCREEN_ID_IDLE)
-		scr_msg[screen_id].para |= (SCREEN_EVENT_UPDATE_TIME|SCREEN_EVENT_UPDATE_DATE|SCREEN_EVENT_UPDATE_WEEK);
 }
 
 void UpdateSystemTime(void)
@@ -426,9 +399,6 @@ void UpdateSystemTime(void)
 	static uint64_t timeoffset=0;
 
    	memcpy(&last_date_time, &date_time, sizeof(sys_date_timer_t));
-
-	if(screen_id == SCREEN_ID_IDLE)
-		scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_TIME;
 
 	timestamp = k_uptime_get();
 	timeskip = abs(timestamp-laststamp);
@@ -522,9 +492,6 @@ void UpdateSystemTime(void)
 				}
 
 				update_date_time = true;
-				
-				if(screen_id == SCREEN_ID_IDLE)
-					scr_msg[screen_id].para |= (SCREEN_EVENT_UPDATE_DATE|SCREEN_EVENT_UPDATE_WEEK);
 			}
 		}
 	}
@@ -875,24 +842,6 @@ void TimeMsgProcess(void)
 	{
 		sys_time_count = false;
 		UpdateSystemTime();
-		
-		if(lcd_is_sleeping)
-			return;
-		
-		if((screen_id == SCREEN_ID_IDLE)
-			||(screen_id == SCREEN_ID_HR)
-			||(screen_id == SCREEN_ID_SPO2)
-			||(screen_id == SCREEN_ID_BP)
-			||(screen_id == SCREEN_ID_TEMP)
-			||(screen_id == SCREEN_ID_STEPS)
-			||(screen_id == SCREEN_ID_SLEEP)
-			)
-		{
-			if(charger_is_connected&&(g_chg_status == BAT_CHARGING_PROGRESS))
-				scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_BAT;
-
-			scr_msg[screen_id].act = SCREEN_ACTION_UPDATE;
-		}
 	}
 
 #ifdef CONFIG_IMU_SUPPORT
