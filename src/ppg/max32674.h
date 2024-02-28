@@ -9,7 +9,6 @@
 #ifndef __MAX32674_H__
 #define __MAX32674_H__
 
-#include <nrf9160.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include "datetime.h"

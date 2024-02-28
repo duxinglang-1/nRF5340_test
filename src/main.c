@@ -4,7 +4,6 @@
 * SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
 */
 
-#include <nrf9160.h>
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <stdio.h>
@@ -12,7 +11,6 @@
 #include <power/reboot.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/drivers/gpio.h>
-#include <modem/nrf_modem_lib.h>
 #include <dk_buttons_and_leds.h>
 #include "lcd.h"
 #include "datetime.h"
@@ -22,31 +20,12 @@
 #include "external_flash.h"
 #include "uart_ble.h"
 #include "settings.h"
-#ifdef CONFIG_TOUCH_SUPPORT
-#include "CST816.h"
-#endif
 #include "Max20353.h"
-#ifdef CONFIG_IMU_SUPPORT
-#include "lsm6dso.h"
-#endif
-#ifdef CONFIG_ALARM_SUPPORT
-#include "Alarm.h"
-#endif
-#include "gps.h"
 #include "screen.h"
 #include "codetrans.h"
-#ifdef CONFIG_AUDIO_SUPPORT
-#include "audio.h"
-#endif
 #ifdef CONFIG_WATCHDOG
 #include "watchdog.h"
 #endif
-#ifdef CONFIG_TEMP_SUPPORT
-#include "temp.h"
-#endif
-#ifdef CONFIG_WIFI_SUPPORT
-#include "esp8266.h"
-#endif/*CONFIG_WIFI_SUPPORT*/
 #include "logger.h"
 
 //#define ANALOG_CLOCK
@@ -55,342 +34,6 @@
 
 static bool sys_pwron_completed_flag = false;
 static uint8_t show_pic_count = 0;//图片显示顺序
-
-/* Stack definition for application workqueue */
-K_THREAD_STACK_DEFINE(nb_stack_area,
-		      4096);
-static struct k_work_q nb_work_q;
-
-#ifdef CONFIG_IMU_SUPPORT
-K_THREAD_STACK_DEFINE(imu_stack_area,
-              2048);
-static struct k_work_q imu_work_q;
-#endif
-
-K_THREAD_STACK_DEFINE(gps_stack_area,
-              2048);
-static struct k_work_q gps_work_q;
-
-#if defined(ANALOG_CLOCK)
-static void test_show_analog_clock(void);
-#elif defined(DIGITAL_CLOCK)
-static void test_show_digital_clock(void);
-#endif
-static void idle_show_time(void);
-
-#ifdef ANALOG_CLOCK
-void ClearAnalogHourPic(int hour)
-{
-	uint16_t offset_x=4,offset_y=4;
-	uint16_t hour_x,hour_y,hour_w,hour_h;
-
-	LCD_get_pic_size(clock_hour_1_31X31,&hour_w,&hour_h);
-	hour_x = (LCD_WIDTH)/2;
-	hour_y = (LCD_HEIGHT)/2;
-
-	if((hour%12) == 3)
-		LCD_Fill(hour_x-offset_x,hour_y+offset_y-hour_h,hour_w,hour_h,BLACK);
-	else if((hour%12) == 6)
-		LCD_Fill(hour_x-offset_x,hour_y-offset_y,hour_w,hour_h,BLACK);
-	else if((hour%12) == 9)
-		LCD_Fill(hour_x+offset_x-hour_w,hour_y-offset_y,hour_w,hour_h,BLACK);
-	else if((hour%12) == 0)
-		LCD_Fill(hour_x+offset_x-hour_w,hour_y+offset_y-hour_h,hour_w,hour_h,BLACK);
-}
-
-void DrawAnalogHourPic(int hour)
-{
-	uint16_t offset_x=4,offset_y=4;
-	uint16_t hour_x,hour_y,hour_w,hour_h;
-	unsigned int *hour_pic[3] = {clock_hour_1_31X31,clock_hour_2_31X31,clock_hour_3_31X31};
-
-	LCD_get_pic_size(clock_hour_1_31X31,&hour_w,&hour_h);
-	hour_x = (LCD_WIDTH)/2;
-	hour_y = (LCD_HEIGHT)/2;
-
-	if((hour%12)<3)
-		LCD_dis_pic_rotate(hour_x-offset_x,hour_y+offset_y-hour_h,hour_pic[hour%3],0);
-	else if(((hour%12)>=3) && ((hour%12)<6))
-		LCD_dis_pic_rotate(hour_x-offset_x,hour_y-offset_y,hour_pic[hour%3],90);
-	else if(((hour%12)>=6) && ((hour%12)<9))
-		LCD_dis_pic_rotate(hour_x+offset_x-hour_w,hour_y-offset_y,hour_pic[hour%3],180);
-	else if(((hour%12)>=9) && ((hour%12)<12))
-		LCD_dis_pic_rotate(hour_x+offset_x-hour_w,hour_y+offset_y-hour_h,hour_pic[hour%3],270);
-}
-
-void ClearAnalogMinPic(int minute)
-{
-	uint16_t offset_x=4,offset_y=4;
-	uint16_t min_x,min_y,min_w,min_h;
-	
-	LCD_get_pic_size(clock_min_1_31X31,&min_w,&min_h);
-	min_x = (LCD_WIDTH)/2;
-	min_y = (LCD_HEIGHT)/2;
-
-	if(minute == 15)
-		LCD_Fill(min_x-offset_x,min_y+offset_y-min_h,min_w,min_h,BLACK);
-	else if(minute == 30)
-		LCD_Fill(min_x-offset_x,min_y-offset_y,min_w,min_h,BLACK);
-	else if(minute == 45)
-		LCD_Fill(min_x+offset_x-min_w,min_y-offset_y,min_w,min_h,BLACK);
-	else if(minute == 0)
-		LCD_Fill(min_x+offset_x-min_w,min_y+offset_y-min_h,min_w,min_h,BLACK);
-}
-
-void DrawAnalogMinPic(int hour, int minute)
-{
-	uint16_t offset_x=4,offset_y=4;
-	uint16_t min_x,min_y,min_w,min_h;
-	unsigned int *min_pic[15] = {clock_min_1_31X31,clock_min_2_31X31,clock_min_3_31X31,clock_min_4_31X31,clock_min_5_31X31,\
-								 clock_min_6_31X31,clock_min_7_31X31,clock_min_8_31X31,clock_min_9_31X31,clock_min_10_31X31,\
-								 clock_min_11_31X31,clock_min_12_31X31,clock_min_13_31X31,clock_min_14_31X31,clock_min_15_31X31};
-	
-	LCD_get_pic_size(clock_min_1_31X31,&min_w,&min_h);
-	min_x = (LCD_WIDTH)/2;
-	min_y = (LCD_HEIGHT)/2;
-
-	if(minute<15)
-	{
-		if((hour%12)<3)							//分针时针有重叠，透明显示
-		{
-			DrawAnalogHourPic(hour);
-			LCD_dis_pic_trans_rotate(min_x-offset_x,min_y+offset_y-min_h,min_pic[minute%15],BLACK,0);
-		}
-		else if((hour%12)==3)		//临界点，分针不透明显示，但是不能遮盖时针
-		{
-			LCD_dis_pic_rotate(min_x-offset_x,min_y+offset_y-min_h,min_pic[minute%15],0);
-			DrawAnalogHourPic(hour);
-		}
-		else
-			LCD_dis_pic_rotate(min_x-offset_x,min_y+offset_y-min_h,min_pic[minute%15],0);
-	}
-	else if((minute>=15) && (minute<30))
-	{
-		if(((hour%12)>=3) && ((hour%12)<6))	//分针时针有重叠，透明显示
-		{
-			DrawAnalogHourPic(hour);
-			LCD_dis_pic_trans_rotate(min_x-offset_x,min_y-offset_y,min_pic[minute%15],BLACK,90);
-		}
-		else if((hour%12)==6)		//临界点，分针不透明显示，但是不能遮盖时针
-		{
-			LCD_dis_pic_rotate(min_x-offset_x,min_y-offset_y,min_pic[minute%15],90);
-			DrawAnalogHourPic(hour);
-		}
-		else
-			LCD_dis_pic_rotate(min_x-offset_x,min_y-offset_y,min_pic[minute%15],90);
-	}
-	else if((minute>=30) && (minute<45))
-	{
-		if(((hour%12)>=6) && ((hour%12)<9))	//分针时针有重叠，透明显示
-		{
-			DrawAnalogHourPic(hour);
-			LCD_dis_pic_trans_rotate(min_x+offset_x-min_w,min_y-offset_y,min_pic[minute%15],BLACK,180);
-		}
-		else if((hour%12)==9)		//临界点，分针不透明显示，但是不能遮盖时针
-		{
-			LCD_dis_pic_rotate(min_x+offset_x-min_w,min_y-offset_y,min_pic[minute%15],180);
-			DrawAnalogHourPic(hour);
-		}
-		else
-			LCD_dis_pic_rotate(min_x+offset_x-min_w,min_y-offset_y,min_pic[minute%15],180);
-	}
-	else if((minute>=45) && (minute<60))
-	{
-		if((hour%12)>=9)	//分针时针有重叠，透明显示
-		{
-			DrawAnalogHourPic(hour);
-			LCD_dis_pic_trans_rotate(min_x+offset_x-min_w,min_y+offset_y-min_h,min_pic[minute%15],BLACK,270);
-		}
-		else if((hour%12)==0)		//临界点，分针不透明显示，但是不能遮盖时针
-		{
-			LCD_dis_pic_rotate(min_x+offset_x-min_w,min_y+offset_y-min_h,min_pic[minute%15],270);
-			DrawAnalogHourPic(hour);
-		}
-		else
-			LCD_dis_pic_rotate(min_x+offset_x-min_w,min_y+offset_y-min_h,min_pic[minute%15],270);
-	}
-}
-#endif
-
-/***************************************************************************
-* 描  述 : idle_show_digit_clock 待机界面显示数字时钟
-* 入  参 : 无 
-* 返回值 : 无
-**************************************************************************/
-void idle_show_digital_clock(void)
-{
-	IdleShowSystemTime();
-	
-	if(show_date_time_first || ((date_time_changed&0x38) != 0))
-	{
-		IdleShowSystemDate();
-		IdleShowSystemWeek();
-
-		if(show_date_time_first)
-			show_date_time_first = false;
-		if((date_time_changed&0x38) != 0)
-			date_time_changed = date_time_changed&0xC7;//清空日期变化标志位
-	}
-}
-
-#ifdef ANALOG_CLOCK
-/***************************************************************************
-* 描  述 : idle_show_analog_clock 待机界面显示模拟时钟
-* 入  参 : 无 
-* 返回值 : 无
-**************************************************************************/
-void idle_show_analog_clock(void)
-{
-	uint8_t str_date[20] = {0};
-	uint8_t str_week[20] = {0};
-	uint8_t *week_cn[7] = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
-	uint8_t *week_en[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
-	uint16_t str_w,str_h;
-
-	POINT_COLOR=WHITE;								//画笔颜色
-	BACK_COLOR=BLACK;  								//背景色 
-
-#ifdef FONTMAKER_UNICODE_FONT
-	LCD_SetFontSize(FONT_SIZE_20);
-#else
-	LCD_SetFontSize(FONT_SIZE_16);
-#endif
-
-	sprintf((char*)str_date, "%02d/%02d", date_time.day,date_time.month);
-	if(global_settings.language == LANGUAGE_CHN)
-		strcpy(str_week, week_cn[date_time.week]);
-	else
-		strcpy(str_week, week_en[date_time.week]);
-	
-	if(show_date_time_first)
-	{
-		show_date_time_first = false;
-		DrawAnalogHourPic(date_time.hour);
-		DrawAnalogMinPic(date_time.hour, date_time.minute);
-
-		LCD_MeasureString(str_week, &str_w, &str_h);
-		LCD_ShowString((LCD_WIDTH-str_w)/2, 15, str_week);
-
-		LCD_MeasureString(str_date, &str_w, &str_h);
-		LCD_ShowString((LCD_WIDTH-str_w)/2, 33, str_date);
-	}
-	else if(date_time_changed != 0)
-	{
-		if((date_time_changed&0x04) != 0)
-		{
-			DrawAnalogHourPic(date_time.hour);
-			date_time_changed = date_time_changed&0xFB;
-		}	
-		if((date_time_changed&0x02) != 0)//分钟有变化
-		{
-			DrawAnalogHourPic(date_time.hour);
-			DrawAnalogMinPic(date_time.hour, date_time.minute);
-			date_time_changed = date_time_changed&0xFD;
-		}
-		if((date_time_changed&0x38) != 0)
-		{
-			LCD_MeasureString(str_week, &str_w, &str_h);
-			LCD_ShowString((LCD_WIDTH-str_w)/2, 15, str_week);
-
-			LCD_MeasureString(str_date, &str_w, &str_h);
-			LCD_ShowString((LCD_WIDTH-str_w)/2, 33, str_date);
-
-			date_time_changed = date_time_changed&0xC7;//清空日期变化标志位
-		}
-	}
-}
-#endif
-
-void idle_show_clock_background(void)
-{
-	LCD_Clear(BLACK);
-	BACK_COLOR=BLACK;
-	POINT_COLOR=WHITE;
-
-#ifdef FONTMAKER_UNICODE_FONT
-	LCD_SetFontSize(FONT_SIZE_20);
-#else	
-	LCD_SetFontSize(FONT_SIZE_16);
-#endif
-
-#ifdef ANALOG_CLOCK	
-	if(global_settings.idle_colck_mode == CLOCK_MODE_ANALOG)
-	{
-		LCD_dis_pic(0,0,clock_bg_80X160);
-	}
-#endif
-}
-
-/***************************************************************************
-* 描  述 : idle_show_time 待机界面显示时间
-* 入  参 : 无 
-* 返回值 : 无
-**************************************************************************/
-void idle_show_time(void)
-{	
-	if(global_settings.idle_colck_mode == CLOCK_MODE_ANALOG)
-	{
-	#ifdef ANALOG_CLOCK
-		if((date_time_changed&0x02) != 0)
-		{
-			ClearAnalogMinPic(date_time.minute);//擦除以前的分钟
-		}
-		if((date_time_changed&0x04) != 0)
-		{
-			ClearAnalogHourPic(date_time.hour);//擦除以前的时钟
-		}
-
-		idle_show_analog_clock();
-	#endif
-	}
-	else
-	{
-	#ifdef DIGITAL_CLOCK
-		if((date_time_changed&0x01) != 0)
-		{
-			date_time_changed = date_time_changed&0xFE;
-			BlockWrite((LCD_WIDTH-8*8)/2+6*8,(LCD_HEIGHT-16)/2,2*8,16);//擦除以前的秒钟
-		}
-		if((date_time_changed&0x02) != 0)
-		{
-			date_time_changed = date_time_changed&0xFD;
-			BlockWrite((LCD_WIDTH-8*8)/2+3*8,(LCD_HEIGHT-16)/2,2*8,16);//擦除以前的分钟
-		}
-		if((date_time_changed&0x04) != 0)
-		{
-			date_time_changed = date_time_changed&0xFB;
-			BlockWrite((LCD_WIDTH-8*8)/2,(LCD_HEIGHT-16)/2,2*8,16);//擦除以前的时钟
-		}
-		
-		if((date_time_changed&0x38) != 0)
-		{			
-			BlockWrite((LCD_WIDTH-10*8)/2,(LCD_HEIGHT-16)/2+30,10*8,16);
-		}
-		
-		idle_show_digital_clock();
-	#endif
-	}
-}
-
-void test_show_analog_clock(void)
-{
-	uint32_t err_code;
-	
-	global_settings.idle_colck_mode = CLOCK_MODE_ANALOG;
-	
-	idle_show_clock_background();
-	idle_show_time();
-}
-
-void test_show_digital_clock(void)
-{
-	uint32_t err_code;
-	
-	global_settings.idle_colck_mode == CLOCK_MODE_DIGITAL;
-	
-	idle_show_clock_background();
-	idle_show_time();
-}
 
 void test_show_image(void)
 {
@@ -698,8 +341,8 @@ void test_notify(void)
 
 static void modem_init(void)
 {
-	nrf_modem_lib_init(NORMAL_MODE);
-	boot_write_img_confirmed();
+	//nrf_modem_lib_init(NORMAL_MODE);
+	//boot_write_img_confirmed();
 }
 
 void system_init(void)
@@ -708,15 +351,8 @@ void system_init(void)
 
 	modem_init();
 
-#ifdef CONFIG_FOTA_DOWNLOAD
-	fota_init();
-#endif
-
 	InitSystemSettings();
 
-#ifdef CONFIG_IMU_SUPPORT
-	init_imu_int1();//xb add 2022-05-27
-#endif
 #ifdef CONFIG_PPG_SUPPORT
 	PPG_i2c_off();
 #endif
@@ -730,42 +366,12 @@ void system_init(void)
 #ifdef CONFIG_PPG_SUPPORT	
 	PPG_init();
 #endif
-#ifdef CONFIG_AUDIO_SUPPORT	
-	audio_init();
-#endif
 	ble_init();
-#ifdef CONFIG_WIFI_SUPPORT
-	wifi_init();
-#endif
-#ifdef CONFIG_IMU_SUPPORT
-	IMU_init(&imu_work_q);
-#endif
-#ifdef CONFIG_TEMP_SUPPORT
-	temp_init();
-#endif
-#ifdef CONFIG_DATA_DOWNLOAD_SUPPORT
-	dl_init();
-#endif
 	LogInit();
-
-	NB_init(&nb_work_q);
-	GPS_init(&gps_work_q);
 }
 
 void work_init(void)
 {
-	k_work_queue_start(&nb_work_q, nb_stack_area,
-					K_THREAD_STACK_SIZEOF(nb_stack_area),
-					CONFIG_APPLICATION_WORKQUEUE_PRIORITY,NULL);
-#ifdef CONFIG_IMU_SUPPORT	
-	k_work_queue_start(&imu_work_q, imu_stack_area,
-					K_THREAD_STACK_SIZEOF(imu_stack_area),
-					CONFIG_APPLICATION_WORKQUEUE_PRIORITY,NULL);
-#endif
-	k_work_queue_start(&gps_work_q, gps_stack_area,
-					K_THREAD_STACK_SIZEOF(gps_stack_area),
-					CONFIG_APPLICATION_WORKQUEUE_PRIORITY,NULL);	
-	
 	if(IS_ENABLED(CONFIG_WATCHDOG))
 	{
 		watchdog_init_and_start(&k_sys_work_q);
@@ -819,50 +425,14 @@ int main(void)
 	{
 		KeyMsgProcess();
 		TimeMsgProcess();
-		NBMsgProcess();
-		GPSMsgProcess();
 		PMUMsgProcess();
-	#ifdef CONFIG_IMU_SUPPORT	
-		IMUMsgProcess();
-	#ifdef CONFIG_FALL_DETECT_SUPPORT
-		FallMsgProcess();
-	#endif
-	#endif
 	#ifdef CONFIG_PPG_SUPPORT	
 		PPGMsgProcess();
 	#endif
 		LCDMsgProcess();
-	#ifdef CONFIG_TOUCH_SUPPORT
-		TPMsgProcess();
-	#endif
-	#ifdef CONFIG_ALARM_SUPPORT
-		AlarmMsgProcess();
-	#endif
 		SettingsMsgPorcess();
-		SOSMsgProc();
-	#ifdef CONFIG_WIFI_SUPPORT
-		WifiMsgProcess();
-	#endif
 		UartMsgProc();
-	#ifdef CONFIG_ANIMATION_SUPPORT
-		AnimaMsgProcess();
-	#endif		
 		ScreenMsgProcess();
-	#ifdef CONFIG_DATA_DOWNLOAD_SUPPORT
-		DlMsgProc();
-	#endif
-	#ifdef CONFIG_FOTA_DOWNLOAD
-		FotaMsgProc();
-	#endif
-	#ifdef CONFIG_AUDIO_SUPPORT
-		AudioMsgProcess();
-	#endif
-	#ifdef CONFIG_SYNC_SUPPORT
-		SyncMsgProcess();
-	#endif
-	#ifdef CONFIG_TEMP_SUPPORT
-		TempMsgProcess();
-	#endif
 	#ifdef CONFIG_FACTORY_TEST_SUPPORT
 		FactoryTestProccess();
 	#endif

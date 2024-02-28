@@ -17,7 +17,7 @@
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(spi3), okay)
 #define FLASH_DEVICE DT_NODELABEL(spi3)
 #else
-#error "spi3 devicetree node is disabled"
+//#error "spi3 devicetree node is disabled"
 #define FLASH_DEVICE	""
 #endif
 

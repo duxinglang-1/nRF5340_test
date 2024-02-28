@@ -8,9 +8,6 @@
 #include "screen.h"
 #include "settings.h"
 #include "datetime.h"
-#ifdef CONFIG_ALARM_SUPPORT
-#include "alarm.h"
-#endif
 #include "lcd.h"
 #include "codetrans.h"
 #include "inner_flash.h"
@@ -748,52 +745,20 @@ void InitSystemSettings(void)
 	}
 
 	InitSystemDateTime();
-#ifdef CONFIG_ALARM_SUPPORT	
-	AlarmRemindInit();
-#endif
 	mmi_chset_init();
 }
 
-void ResetLocalData(void)
-{
-	clear_cur_local_in_record();
-	clear_local_in_record();
-}
 
 void ResetHealthData(void)
 {
-#if defined(CONFIG_PPG_SUPPORT)||defined(CONFIG_TEMP_SUPPORT)
+#if defined(CONFIG_PPG_SUPPORT)
 	clear_cur_health_in_record();
 	clear_health_in_record();
-#endif
 
-#ifdef CONFIG_PPG_SUPPORT
 	ClearAllHrRecData();
 	ClearAllSpo2RecData();
 	ClearAllBptRecData();
 	sh_clear_bpt_cal_data();
-#endif
-
-#ifdef CONFIG_TEMP_SUPPORT
-	ClearAllTempRecData();
-#endif
-}
-
-void ResetSportData(void)
-{
-#if defined(CONFIG_IMU_SUPPORT)&&(defined(CONFIG_STEP_SUPPORT)||defined(CONFIG_SLEEP_SUPPORT))
-	clear_cur_sport_in_record();
-	clear_sport_in_record();
-#endif
-
-#ifdef CONFIG_IMU_SUPPORT
-#ifdef CONFIG_STEP_SUPPORT
-	ClearAllStepRecData();
-#endif
-
-#ifdef CONFIG_SLEEP_SUPPORT
-	ClearAllSleepRecData();
-#endif
 #endif
 }
 
@@ -802,9 +767,7 @@ void ResetFactoryDefault(void)
 	ResetSystemTime();
 	ResetSystemSettings();
 
-	ResetLocalData();
 	ResetHealthData();
-	ResetSportData();
 
 	LogClear();
 

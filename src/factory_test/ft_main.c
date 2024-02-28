@@ -14,7 +14,6 @@
 #ifdef CONFIG_TOUCH_SUPPORT
 #include "CST816.h"
 #endif
-#include "nb.h"
 #include "external_flash.h"
 #include "screen.h"
 #include "settings.h"

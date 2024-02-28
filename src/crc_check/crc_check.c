@@ -6,7 +6,6 @@
 ** Modified Date:      		2021-12-27 
 ** Version:			    	V1.0
 ******************************************************************************************************/
-#include <nrf9160.h>
 #include <zephyr/device.h>
 #include <stdio.h>
 #include <stdlib.h>

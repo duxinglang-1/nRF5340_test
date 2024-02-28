@@ -12,7 +12,6 @@
 #include <stdio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/types.h>
-#include <nrf_modem_gnss.h>
 #include "datetime.h"
 #include "Settings.h"
 #ifdef CONFIG_WIFI_SUPPORT
@@ -128,38 +127,10 @@ typedef struct
 	temp_record_t temp_rec;
 }health_record_t;
 
-typedef struct
-{
-	sys_date_timer_t timestamp;
-	double latitude;
-	double longitude;
-	float altitude;
-	float speed;
-	float heading;
-	struct nrf_modem_gnss_datetime datetime;
-}gps_record_t;
-
-#ifdef CONFIG_WIFI_SUPPORT
-typedef struct
-{
-	sys_date_timer_t timestamp;
-	wifi_infor wifi_node;
-}wifi_record_t;
-#endif
-
-typedef struct
-{
-	gps_record_t gps_rec;
-#ifdef CONFIG_WIFI_SUPPORT
-	wifi_record_t wifi_rec;
-#endif
-}local_record_t;
-
 typedef union
 {
 	sport_record_t sport;
 	health_record_t health;
-	local_record_t local;
 }imu_data_u;
 
 extern sport_record_t last_sport;
@@ -172,27 +143,21 @@ extern void SaveSettingsToInnerFlash(global_settings_t settings);
 extern void ReadDateTimeFromInnerFlash(sys_date_timer_t *time);
 extern void SaveDateTimeToInnerFlash(sys_date_timer_t time);
 
-extern bool save_cur_local_to_record(local_record_t *local_data);
 extern bool save_cur_health_to_record(health_record_t *health_data);
 extern bool save_cur_sport_to_record(sport_record_t *sport_data);
 
-extern bool get_cur_local_from_record(local_record_t *local_data);
 extern bool get_cur_health_from_record(health_record_t *health_data);
 extern bool get_cur_sport_from_record(sport_record_t *sport_data);
 
-extern bool save_local_to_record(local_record_t *local_data);
 extern bool save_health_to_record(health_record_t *health_data);
 extern bool save_sport_to_record(sport_record_t *sport_data);
 
-extern bool get_local_from_record(local_record_t *local_data, uint32_t index);
 extern bool get_health_from_record(health_record_t *health_data, uint32_t index);
 extern bool get_sport_from_record(sport_record_t *sport_data, uint32_t index);
 
 extern bool get_last_sport_from_record(sport_record_t *sport_data);
 extern bool get_last_health_from_record(health_record_t *health_data);
-extern bool get_last_local_from_record(local_record_t *local_data);
 
-extern bool get_local_from_record_by_time(local_record_t *local_data, ENUM_RECORD_LOCATION_TYPE type, sys_date_timer_t begin_time, uint32_t index);
 extern bool get_health_from_record_by_time(health_record_t *health_data, ENUM_RECORD_HEALTH_TYPE type, sys_date_timer_t begin_time, uint32_t index);
 extern bool get_sport_from_record_by_time(sport_record_t *sport_data, ENUM_RECORD_SPORT_TYPE type, sys_date_timer_t begin_time, uint32_t index);
 

@@ -9,13 +9,10 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdint.h>
-#include <nrf9160.h>
 #include <zephyr/kernel.h>
 #include <math.h>
 #include "lcd.h"
 #include "settings.h"
-#include "gps.h"
-#include "nb.h"
 #include "font.h"
 #include "external_flash.h"
 #include "max20353.h"

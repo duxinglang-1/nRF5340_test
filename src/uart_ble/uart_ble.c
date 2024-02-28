@@ -16,10 +16,6 @@
 #include "datetime.h"
 #include "Settings.h"
 #include "Uart_ble.h"
-#ifdef CONFIG_TOUCH_SUPPORT
-#include "CST816.h"
-#endif
-#include "gps.h"
 #include "max20353.h"
 #ifdef CONFIG_PPG_SUPPORT
 #include "max32674.h"

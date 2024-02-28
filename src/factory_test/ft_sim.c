@@ -15,7 +15,6 @@
 #include "screen.h"
 #include "settings.h"
 #include "key.h"
-#include "nb.h"
 #include "ft_main.h"
 #include "ft_sim.h"
 	

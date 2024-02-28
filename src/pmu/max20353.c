@@ -468,7 +468,7 @@ void system_power_off(uint8_t flag)
 		sys_shutdown_is_running = true;
 		
 		SaveSystemDateTime();
-		if(nb_is_connected())
+		if(1)//(nb_is_connected())
 		{
 			SendPowerOffData(flag);
 		}

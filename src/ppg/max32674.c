@@ -15,7 +15,6 @@
 #include <zephyr/random/rand32.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
-#include <nrf_socket.h>
 #include <nrfx.h>
 #include "uart_ble.h"
 #include "Max32674.h"

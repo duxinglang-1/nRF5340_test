@@ -18,7 +18,6 @@
 #include "esp8266.h"
 #endif/*CONFIG_WIFI_SUPPORT*/
 #include "max20353.h"
-#include "nb.h"
 #include "external_flash.h"
 #include "screen.h"
 #include "settings.h"

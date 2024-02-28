@@ -3,7 +3,6 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <nrf9160.h>
 #include <zephyr/kernel.h>
 
 #define FONT_16

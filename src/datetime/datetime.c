@@ -17,9 +17,6 @@
 #include "font.h"
 #ifdef CONFIG_IMU_SUPPORT
 #include "Lsm6dso.h"
-#ifdef CONFIG_IMU_SUPPORT
-#include "Sleep.h"
-#endif
 #endif
 #include "max20353.h"
 #ifdef CONFIG_PPG_SUPPORT
@@ -30,7 +27,6 @@
 #endif
 #include "screen.h"
 #include "uart_ble.h"
-#include "nb.h"
 #include "ucs2.h"
 #include "logger.h"
 
