@@ -564,6 +564,9 @@ void pmu_status_update(void)
 	bool flag = false;
 	uint8_t status0,status1;
 	static uint8_t charging_count = 0;
+
+	if(!pmu_check_ok)
+		return;
 	
 	MAX20353_ReadReg(REG_STATUS0, &status0);
 #ifdef PMU_DEBUG
