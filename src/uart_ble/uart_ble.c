@@ -20,11 +20,7 @@
 #ifdef CONFIG_PPG_SUPPORT
 #include "max32674.h"
 #endif
-#include "screen.h"
 #include "inner_flash.h"
-#ifdef CONFIG_WIFI_SUPPORT
-#include "esp8266.h"
-#endif
 
 //#define UART_DEBUG
 
@@ -2235,24 +2231,6 @@ void UartMsgProc(void)
 		uart_rece_frame_flag = false;
 	}
 	
-	if(redraw_blt_status_flag)
-	{
-		if((screen_id == SCREEN_ID_IDLE)
-			||(screen_id == SCREEN_ID_HR)
-			||(screen_id == SCREEN_ID_SPO2)
-			||(screen_id == SCREEN_ID_BP)
-			||(screen_id == SCREEN_ID_TEMP)
-			||(screen_id == SCREEN_ID_STEPS)
-			||(screen_id == SCREEN_ID_SLEEP)
-			)
-		{
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_BLE;
-			scr_msg[screen_id].act = SCREEN_ACTION_UPDATE;
-		}
-		
-		redraw_blt_status_flag = false;
-	}
-
 	if(get_ble_info_flag)
 	{
 		static uint8_t index = 0;

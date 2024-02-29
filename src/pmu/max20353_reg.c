@@ -14,8 +14,9 @@
 #include "max20353.h"
 #include "NTC_table.h"
 #include "settings.h"
-#include "lcd.h"
 #include "logger.h"
+
+#ifdef PMU_SENSOR_MAX20353
 
 #ifdef BATTERY_SOC_GAUGE
 static uint8_t SOC_1, SOC_2;
@@ -70,7 +71,7 @@ static unsigned char Pattern[256] =
 	0x00,0x4E,0x7B,0x7F,0x7F,0x7B,0x4E,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,0x00,
 };
 
-extern maxdev_ctx_t pmu_dev_ctx;
+extern pmudev_ctx_t pmu_dev_ctx;
 
 void delay_ms(uint32_t period)
 {
@@ -1664,3 +1665,5 @@ void MAX20353_SOCInit(void)
 #endif
 }
 #endif/*BATTERY_SOC_GAUGE*/
+
+#endif/*PMU_SENSOR_MAX20353*/

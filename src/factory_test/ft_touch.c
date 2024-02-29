@@ -9,7 +9,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/gpio.h>
 #include "external_flash.h"
-#include "lcd.h"
 #if defined(LCD_ORCZ010903C_GC9A01)
 #include "LCD_ORCZ010903C_GC9A01.h"
 #elif defined(LCD_R108101_GC9307)

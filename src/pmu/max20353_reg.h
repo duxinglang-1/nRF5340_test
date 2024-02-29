@@ -15,6 +15,9 @@ extern "C" {
 #include <math.h> 
 #include <stdint.h>
 #include <math.h>
+#include "pmu.h"
+
+#ifdef PMU_SENSOR_MAX20353
 
 extern struct device *max20353_I2C;
 
@@ -102,17 +105,6 @@ typedef enum
   *
   *
 **/
-typedef int32_t (*maxdev_write_ptr)(struct device *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
-typedef int32_t (*maxdev_read_ptr)(struct device *handle, uint8_t reg, uint8_t *bufp, uint16_t len);
-
-typedef struct {
-  /** Component mandatory fields **/
-  maxdev_write_ptr  write_reg;
-  maxdev_read_ptr   read_reg;
-  /** Customizable optional pointer **/
-  struct device *handle;
-} maxdev_ctx_t;
-
 
 int MAX20353_AppWrite(uint8_t dataoutlen);
 int MAX20353_WriteRegMulti(max20353_reg_t reg, uint8_t *value, uint8_t len);
@@ -138,4 +130,5 @@ extern bool MAX20353_Init(void);
 }
 #endif
 
+#endif/*PMU_SENSOR_MAX20353*/
 #endif/*__MAX20353_REG_H__*/

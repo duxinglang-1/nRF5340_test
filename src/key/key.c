@@ -22,11 +22,6 @@
 #ifdef CONFIG_PPG_SUPPORT
 #include "max32674.h"
 #endif
-#ifdef CONFIG_ALARM_SUPPORT
-#include "Alarm.h"
-#endif
-#include "lcd.h"
-#include "screen.h"
 #include "settings.h"
 #include "logger.h"
 
@@ -495,47 +490,7 @@ static void key_event_handler(uint8_t key_code, uint8_t key_type)
 	}
 #endif/*CONFIG_FAST_KEY_SUPPORT*/
 
-	if(lcd_is_sleeping)
-	{
-		if(key_type == KEY_UP)
-		{
-			sleep_out_by_wrist = false;
-			lcd_sleep_out = true;
-		}
-
-		if((key_code == KEY_SOFT_LEFT)&&(key_type == KEY_EVENT_LONG_PRESS))
-		{
-			sleep_out_by_wrist = false;
-			lcd_sleep_out = true;
-		}
-	#ifdef CONFIG_FACTORY_TEST_SUPPORT
-		else if(IsFTCurrentTest())
-		{
-			sleep_out_by_wrist = false;
-			lcd_sleep_out = true;
-		}
-	#endif
-		else
-		{
-			return;
-		}
-	}
-
-	LCD_ResetBL_Timer();
-
 	ExecKeyHandler(key_code, key_type);
-
-#ifdef CONFIG_ALARM_SUPPORT
-	if(alarm_is_running)
-	{
-		AlarmRemindStop();
-	}
-
-	if(find_is_running)
-	{
-		FindDeviceStop();
-	}
-#endif	
 }
 
 static void button_handler(uint32_t button_state, uint32_t has_changed)

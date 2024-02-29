@@ -11,7 +11,6 @@
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
 #include "max_sh_interface.h"
-
 #include "max_sh_api.h"
 #include "external_flash.h"
 #include "settings.h"
@@ -1375,12 +1374,6 @@ bool sh_init_interface(void)
 	if((mcu_type != 1) || ((strcmp(g_ppg_ver, g_ppg_algo_ver) != 0)&&(strlen(g_ppg_algo_ver) > 0)))
 	{
 need_update:
-	#ifdef FONTMAKER_UNICODE_FONT
-		LCD_SetFontSize(FONT_SIZE_20);
-	#else	
-		LCD_SetFontSize(FONT_SIZE_16);
-	#endif
-		NotifyShowStrings((LCD_WIDTH-180)/2, (LCD_HEIGHT-120)/2, 180, 120, NULL, 0, "PPG is upgrading firmware, please wait a few minutes!");
 		SH_OTA_upgrade_process();
 		s32_status = sh_get_hub_fw_version(u8_rxbuf);
 		if(s32_status == SS_SUCCESS)
@@ -1390,7 +1383,6 @@ need_update:
 			LOGD("FW version is:%s", g_ppg_ver);
 		#endif
 		}
-		LCD_SleepOut();
 	}
 
 	PPG_i2c_off();
