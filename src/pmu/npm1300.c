@@ -1,20 +1,28 @@
+/****************************************Copyright (c)************************************************
+** File Name:			    npm1300.c
+** Descriptions:			npm1300 sensor message process source file
+** Created By:				xie biao
+** Created Date:			2024-02-28
+** Modified Date:      		
+** Version:			    	V1.0
+******************************************************************************************************/
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
-#include "max20353.h"
-#include "max20353_reg.h"
+#include "pmu.h"
+#include "npm1300.h"
 #include "datetime.h"
 #include "settings.h"
 #include "external_flash.h"
 #include "logger.h"
 
-#ifdef PMU_SENSOR_MAX20353
+#ifdef PMU_SENSOR_NPM1300
 
 //#define SHOW_LOG_IN_SCREEN
-//#define PMU_DEBUG
+#define PMU_DEBUG
 
 #ifdef GPIO_ACT_I2C
 #define PMU_SCL		0
@@ -29,20 +37,23 @@
 #define PMU_DEV	""
 #endif
 
-#define PMU_SCL			31
-#define PMU_SDA			30
+#define PMU_SCL			0
+#define PMU_SDA			1
 
 #endif/*GPIO_ACT_I2C*/
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
-#define PMU_PORT DT_NODELABEL(gpio0)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio1), okay)
+#define PMU_PORT DT_NODELABEL(gpio1)
 #else
 #error "gpio0 devicetree node is disabled"
 #define PMU_PORT	""
 #endif
 
-#define PMU_ALRTB		7
-#define PMU_EINT		8
+#define PMU_ALRTB		8
+#define PMU_EINT		9
+
+static uint8_t HardwareID;
+static uint8_t FirmwareID;
 
 static bool pmu_check_ok = false;
 static uint8_t last_bat_soc = 0;
@@ -82,24 +93,6 @@ pmudev_ctx_t pmu_dev_ctx;
 
 extern bool key_pwroff_flag;
 
-#ifdef SHOW_LOG_IN_SCREEN
-static uint8_t tmpbuf[256] = {0};
-
-static void show_infor1(uint8_t *strbuf)
-{
-	//LCD_Clear(BLACK);
-	LCD_Fill(30,50,180,70,BLACK);
-	LCD_ShowStringInRect(30,50,180,70,strbuf);
-}
-
-static void show_infor2(uint8_t *strbuf)
-{
-	//LCD_Clear(BLACK);
-	LCD_Fill(30,130,180,70,BLACK);
-	LCD_ShowStringInRect(30,130,180,70,strbuf);
-}
-#endif
-
 void Delay_ms(unsigned int dly)
 {
 	k_sleep(K_MSEC(dly));
@@ -118,7 +111,9 @@ void I2C_INIT(void)
 
 	gpio_pin_configure(gpio_pmu, PMU_SCL, GPIO_OUTPUT);
 	gpio_pin_configure(gpio_pmu, PMU_SDA, GPIO_OUTPUT);
+	gpio_pin_set(gpio_pmu, PMU_SCL, 0);
 	gpio_pin_set(gpio_pmu, PMU_SCL, 1);
+	gpio_pin_set(gpio_pmu, PMU_SDA, 0);
 	gpio_pin_set(gpio_pmu, PMU_SDA, 1);
 }
 
@@ -346,76 +341,213 @@ static bool init_i2c(void)
 static int32_t platform_write(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
 	uint32_t i=0;
-	uint8_t data[len+1];
+	uint8_t data[len+2];
 	uint32_t rslt = 0;
 
-	data[0] = reg;
-	memcpy(&data[1], bufp, len);
+	data[0] = (uint8_t)(reg>>8);
+	data[1] = (uint8_t)(reg&0x00ff);
+	memcpy(&data[2], bufp, len);
+
 #ifdef GPIO_ACT_I2C
-	rslt = I2C_write_data(MAX20353_I2C_ADDR, data, len+1);
+	rslt = I2C_write_data(NPM1300_I2C_ADDR, data, sizeof(data));
 #else
-	rslt = i2c_write(handle, data, len+1, MAX20353_I2C_ADDR);
+	rslt = i2c_write(handle, data, sizeof(data), NPM1300_I2C_ADDR);
 #endif
+
 	return rslt;
 }
 
 static int32_t platform_read(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
 	uint32_t rslt = 0;
+	uint8_t data[2] = {0};
+
+	data[0] = (uint8_t)(reg>>8);
+	data[1] = (uint8_t)(reg&0x00ff);
 
 #ifdef GPIO_ACT_I2C
-	rslt = I2C_write_data(MAX20353_I2C_ADDR, &reg, 1);
+	rslt = I2C_write_data(NPM1300_I2C_ADDR, data, sizeof(data));
 	if(rslt == 0)
 	{
-		rslt = I2C_read_data(MAX20353_I2C_ADDR, bufp, len);
+		rslt = I2C_read_data(NPM1300_I2C_ADDR, bufp, len);
 	}
 #else
-	rslt = i2c_write(handle, &reg, 1, MAX20353_I2C_ADDR);
+	rslt = i2c_write(handle, data, sizeof(data), NPM1300_I2C_ADDR);
 	if(rslt == 0)
 	{
-		rslt = i2c_read(handle, bufp, len, MAX20353_I2C_ADDR);
+		rslt = i2c_read(handle, bufp, len, NPM1300_I2C_ADDR);
 	}
 #endif
 	return rslt;
 }
 
+static int nPM1300_WriteRegMulti(NMP1300_REG reg, uint8_t *value, uint8_t len)
+{
+	int32_t ret;
+
+	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, reg, value, len);
+	if(ret != 0)
+	{
+		ret = NPM1300_ERROR; 
+	}
+	else
+	{ 
+		ret = NPM1300_NO_ERROR;
+	}
+	
+	return ret;
+}
+
+static int nPM1300_WriteReg(NMP1300_REG reg, uint8_t value)
+{ 
+    int32_t ret;
+
+	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, reg, &value, 1);
+	if(ret != 0)
+	{
+		ret = NPM1300_ERROR;  
+	}
+	else
+	{
+		ret = NPM1300_NO_ERROR; 
+	}
+
+	return ret;
+}
+
+static int nPM1300_ReadReg(NMP1300_REG reg, uint8_t *value)
+{
+    int32_t ret;
+
+	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, reg, value, 1);
+    if(ret != 0)
+    {
+        ret = NPM1300_ERROR;
+    }
+    else
+    {
+        ret = NPM1300_NO_ERROR;
+    }
+	
+    return ret;
+}
+
+static int nPM1300_ReadRegMulti(NMP1300_REG reg, uint8_t *value, uint8_t len)
+{
+    int32_t ret;
+
+	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, reg, value, len);
+    if(ret != 0)
+        ret = NPM1300_ERROR;
+    else
+        ret = NPM1300_NO_ERROR;
+	
+    return ret;
+}
+
+void nPM1300_Buck1Disable(void)
+{
+	nPM1300_WriteReg(REG_BUCK1ENACLR, 0x01);		//Disable buck1 output
+}
+
+void nPM1300_Buck1Config(void)
+{
+	nPM1300_WriteReg(REG_BUCK1ENASET, 0x01);		//Enable buck1 output
+	nPM1300_WriteReg(REG_BUCK1NORMVOUT, 0x08);		//1.8v value:0~23, voltage:1.0v~3.3V(0.1v per step)
+	nPM1300_WriteReg(REG_BUCKSWCTRLSEL, 0x01);		//Allow SW to override VSET1 pin
+}
+
+void nPM1300_Buck2Disable(void)
+{
+	nPM1300_WriteReg(REG_BUCK2ENACLR, 0x01);
+}
+
+void nPM1300_Buck2Config(void)
+{
+	nPM1300_WriteReg(REG_BUCK2ENASET, 0x01);		//Enable buck1 output
+	nPM1300_WriteReg(REG_BUCK2NORMVOUT, 0x17);		//3.3v value:0~23, voltage:1.0v~3.3V(0.1v per step)
+	nPM1300_WriteReg(REG_BUCKSWCTRLSEL, 0x02);		//Allow SW to override VSET2 pin
+}
+
+void nPM1300_LDO1Disable(void)
+{
+	nPM1300_WriteReg(REG_TASKLDSW1CLR, 0x01);		//Disable LDO1 output
+}
+
+void nPM1300_LDO1Config(void)
+{
+	nPM1300_WriteReg(REG_TASKLDSW1SET, 0x01);		//Enable LOD1 output
+	nPM1300_WriteReg(REG_LDSW1LDOSEL, 0x01);		//Select LDSW1 or LDO1, 0:load switch 1:LDO
+	nPM1300_WriteReg(REG_LDSW1VOUTSEL, 0x14);		//3.0v value:0~23, voltage:1.0v~3.3V(0.1v per step)
+}
+
+void nPM1300_LDO2Disable(void)
+{
+	nPM1300_WriteReg(REG_TASKLDSW2CLR, 0x01);		//Disable ldo2 output
+}
+
+void nPM1300_LDO2Config(void)
+{
+	nPM1300_WriteReg(REG_TASKLDSW2SET, 0x01);		//Enable LDO2 output
+	nPM1300_WriteReg(REG_LDSW2LDOSEL, 0x01);		//Select LDSW2 or LDO2, 0:load switch 1:LDO
+	nPM1300_WriteReg(REG_LDSW2VOUTSEL, 0x08);		//1.8v value:0~23, voltage:1.0v~3.3V(0.1v per step)
+}
+
+void nPM1300_LEDConfig(NMP1300_LED index, bool flag)
+{
+	static bool init_flag = false;
+
+	if(!init_flag)
+	{
+		//Select for LED0 mode
+		//0: Error condition from Charger;
+		//1: Charging indicator (On during charging);
+		//2: Driven from register LEDDRV_0_SET/CLR
+		init_flag = true;
+		nPM1300_WriteReg(REG_LEDDRV0MODESEL, 0x02);
+		nPM1300_WriteReg(REG_LEDDRV1MODESEL, 0x02);
+		nPM1300_WriteReg(REG_LEDDRV2MODESEL, 0x02);
+	}
+	
+	if(flag)
+		nPM1300_WriteReg(REG_LEDDRV0SET+2*index, 0x01);
+	else
+		nPM1300_WriteReg(REG_LEDDRV0CLR+2*index, 0x01);
+}
+
 void PPG_Power_On(void)
 {
-	MAX20353_BoostConfig();
+	
 }
 
 void PPG_Power_Off(void)
 {
-	MAX20353_BoostDisable();
+	
 }
 
 void Set_Screen_Backlight_Level(BACKLIGHT_LEVEL level)
 {
-	int ret = 0;
-
-	ret = MAX20353_LED0(0, (10*level)/BACKLIGHT_LEVEL_MAX, true);
-	ret = MAX20353_LED1(0, (10*level)/BACKLIGHT_LEVEL_MAX, true);
 }
 
 void Set_Screen_Backlight_On(void)
 {
-	int ret = 0;
-
-	ret = MAX20353_LED0(0, (10*global_settings.backlight_level)/BACKLIGHT_LEVEL_MAX, true);
-	ret = MAX20353_LED1(0, (10*global_settings.backlight_level)/BACKLIGHT_LEVEL_MAX, true);
 }
 
 void Set_Screen_Backlight_Off(void)
 {
-	int ret = 0;
-
-	ret = MAX20353_LED0(0, 0, false);
-	ret = MAX20353_LED1(0, 0, false);
 }
 
 void sys_pwr_off_timerout(struct k_timer *timer_id)
 {
 	sys_pwr_off_flag = true;
+}
+
+void VibrateStart(void)
+{
+}
+
+void VibrateStop(void)
+{
 }
 
 void vibrate_start_timerout(struct k_timer *timer_id)
@@ -482,7 +614,7 @@ void SystemShutDown(void)
 #ifdef PMU_DEBUG
 	LOGD("begin");
 #endif
-	MAX20353_PowerOffConfig();
+
 }
 
 void pmu_battery_low_shutdown_timerout(struct k_timer *timer_id)
@@ -508,7 +640,7 @@ void pmu_battery_update(void)
 	if(!pmu_check_ok)
 		return;
 
-	g_bat_soc = MAX20353_CalculateSOC();
+	//g_bat_soc = MAX20353_CalculateSOC();
 #ifdef PMU_DEBUG
 	LOGD("SOC:%d", g_bat_soc);
 #endif	
@@ -560,7 +692,7 @@ void pmu_status_update(void)
 	if(!pmu_check_ok)
 		return;
 	
-	MAX20353_ReadReg(REG_STATUS0, &status0);
+	nPM1300_ReadReg(REG_STATUS0, &status0);
 #ifdef PMU_DEBUG
 	LOGD("status0:%d", (status0&0x07));
 #endif	
@@ -615,7 +747,7 @@ void pmu_status_update(void)
 			g_chg_status = BAT_CHARGING_FINISHED;
 
 		#ifdef BATTERY_SOC_GAUGE	
-			g_bat_soc = MAX20353_CalculateSOC();
+			//g_bat_soc = MAX20353_CalculateSOC();
 		#ifdef PMU_DEBUG
 			LOGD("g_bat_soc:%d", g_bat_soc);
 		#endif
@@ -628,7 +760,7 @@ void pmu_status_update(void)
 		break;
 	}
 	
-	MAX20353_ReadReg(REG_STATUS1, &status1);
+	nPM1300_ReadReg(REG_STATUS1, &status1);
 #ifdef PMU_DEBUG
 	LOGD("status1:%d", (status1&0x08));
 #endif	
@@ -642,11 +774,11 @@ void pmu_status_update(void)
 			charger_is_connected = true;
 			g_chg_status = BAT_CHARGING_PROGRESS;
 			pmu_battery_stop_shutdown();
-			InitCharger();
+			//InitCharger();
 		}
 
 	#ifdef BATTERY_SOC_GAUGE	
-		g_bat_soc = MAX20353_CalculateSOC();
+		//g_bat_soc = MAX20353_CalculateSOC();
 	#ifdef PMU_DEBUG
 		LOGD("soc:%d", g_bat_soc);
 	#endif
@@ -672,7 +804,7 @@ void pmu_status_update(void)
 		}
 		
 	#ifdef BATTERY_SOC_GAUGE	
-		g_bat_soc = MAX20353_CalculateSOC();
+		//g_bat_soc = MAX20353_CalculateSOC();
 	#ifdef PMU_DEBUG
 		LOGD("soc:%d", g_bat_soc);
 	#endif
@@ -715,14 +847,14 @@ bool pmu_interrupt_proc(void)
 	if(!pmu_check_ok)
 		return true;
 	
-	ret = MAX20353_ReadReg(REG_INT0, &int0);
-	if(ret == MAX20353_ERROR)
+	ret = nPM1300_ReadReg(REG_INT0, &int0);
+	if(ret == NPM1300_ERROR)
 		return false;
 	
 	if((int0&0x40) == 0x40) //Charger status change INT  
 	{
-		ret = MAX20353_ReadReg(REG_STATUS0, &status0);
-		if(ret == MAX20353_ERROR)
+		ret = nPM1300_ReadReg(REG_STATUS0, &status0);
+		if(ret == NPM1300_ERROR)
 			return false;
 
 	#ifdef PMU_DEBUG
@@ -754,7 +886,7 @@ bool pmu_interrupt_proc(void)
 			#endif
 
 			#ifdef BATTERY_SOC_GAUGE
-				g_bat_soc = MAX20353_CalculateSOC();
+				//g_bat_soc = MAX20353_CalculateSOC();
 			#ifdef PMU_DEBUG
 				LOGD("g_bat_soc:%d", g_bat_soc);
 			#endif
@@ -770,8 +902,8 @@ bool pmu_interrupt_proc(void)
 	
 	if((int0&0x08) == 0x08) //USB OK Int
 	{
-		ret = MAX20353_ReadReg(REG_STATUS1, &status1);
-		if(ret == MAX20353_ERROR)
+		ret = nPM1300_ReadReg(REG_STATUS1, &status1);
+		if(ret == NPM1300_ERROR)
 			return false;
 
 	#ifdef PMU_DEBUG
@@ -785,7 +917,7 @@ bool pmu_interrupt_proc(void)
 			charger_is_connected = true;
 		
 			pmu_battery_stop_shutdown();
-			InitCharger();
+			//InitCharger();
 		
 			g_chg_status = BAT_CHARGING_PROGRESS;
 		}
@@ -799,7 +931,7 @@ bool pmu_interrupt_proc(void)
 			g_chg_status = BAT_CHARGING_NO;
 
 		#ifdef BATTERY_SOC_GAUGE	
-			g_bat_soc = MAX20353_CalculateSOC();
+			//g_bat_soc = MAX20353_CalculateSOC();
 			if(g_bat_soc > 100)
 				g_bat_soc = 100;
 			if(g_bat_soc > last_bat_soc)
@@ -868,7 +1000,7 @@ bool pmu_alert_proc(void)
 
 #ifdef BATTERY_SOC_GAUGE
 	ret = MAX20353_SOCReadReg(0x1A, &MSB, &LSB);
-	if(ret == MAX20353_ERROR)
+	if(ret == NPM1300_ERROR)
 		return false;
 	
 #ifdef PMU_DEBUG
@@ -943,12 +1075,12 @@ bool pmu_alert_proc(void)
 	}
 
 	ret = MAX20353_SOCWriteReg(0x1A, MSB, LSB);
-	if(ret == MAX20353_ERROR)
+	if(ret == NPM1300_ERROR)
 		return false;
 
 SOC_RESET:	
 	ret = MAX20353_SOCWriteReg(0x0C, RCOMP0, 0x5C);
-	if(ret == MAX20353_ERROR)
+	if(ret == NPM1300_ERROR)
 		return false;
 
 	return true;
@@ -960,11 +1092,11 @@ void PmuAlertHandle(void)
 	pmu_alert_flag = true;
 }
 
-void MAX20353_InitData(void)
+void nPM1300_InitData(void)
 {
 	uint8_t status0,status1;
 	
-	MAX20353_ReadReg(REG_STATUS0, &status0);
+	nPM1300_ReadReg(REG_STATUS0, &status0);
 	switch((status0&0x07))
 	{
 	case 0x00://Charger off
@@ -985,14 +1117,14 @@ void MAX20353_InitData(void)
 		break;
 	}
 	
-	MAX20353_ReadReg(REG_STATUS1, &status1);
+	nPM1300_ReadReg(REG_STATUS1, &status1);
 	if((status1&0x08) == 0x08) //USB OK   
 	{
 		charger_is_connected = true;
 		
-		InitCharger();
+		//InitCharger();
 	#ifdef BATTERY_SOC_GAUGE	
-		g_bat_soc = MAX20353_CalculateSOC();
+		//g_bat_soc = MAX20353_CalculateSOC();
 		if(g_bat_soc>100)
 			g_bat_soc = 100;
 		last_bat_soc = g_bat_soc;
@@ -1025,7 +1157,7 @@ void MAX20353_InitData(void)
 		g_chg_status = BAT_CHARGING_NO;
 		
 	#ifdef BATTERY_SOC_GAUGE	
-		g_bat_soc = MAX20353_CalculateSOC();
+		//g_bat_soc = MAX20353_CalculateSOC();
 		if(g_bat_soc>100)
 			g_bat_soc = 100;
 		last_bat_soc = g_bat_soc;
@@ -1057,6 +1189,39 @@ void MAX20353_InitData(void)
 	#endif
 		SystemShutDown();
 	}
+}
+
+void nPM1300_GetDeviceID(uint8_t *Device_ID)
+{
+	nPM1300_ReadReg(REG_HARDWARE_ID, Device_ID);
+}
+
+bool nPM1300_Init(void)
+{
+	//供电电压及电流配置
+	nPM1300_Buck1Disable();
+	nPM1300_Buck1Config();
+	nPM1300_Buck2Disable();
+	nPM1300_Buck2Config();
+	nPM1300_LDO1Disable();
+	nPM1300_LDO1Config();
+	nPM1300_LDO2Disable();
+	nPM1300_LDO2Config();
+	
+	nPM1300_LEDConfig(NMP1300_LED0, true);
+	nPM1300_LEDConfig(NMP1300_LED1, true);
+	nPM1300_LEDConfig(NMP1300_LED2, true);
+	nPM1300_LEDConfig(NMP1300_LED0, false);
+	nPM1300_LEDConfig(NMP1300_LED1, false);
+	nPM1300_LEDConfig(NMP1300_LED2, false);
+
+	//电量计
+	//MAX20353_SOCInit();
+
+	//充电配置
+	//MAX20353_ChargerInit();
+
+	return true;
 }
 
 void pmu_init(void)
@@ -1102,20 +1267,65 @@ void pmu_init(void)
 	pmu_dev_ctx.handle    = i2c_pmu;
 #endif
 
-	pmu_check_ok = MAX20353_Init();
+	pmu_check_ok = nPM1300_Init();
 	if(!pmu_check_ok)
 		return;
 	
-	MAX20353_InitData();
+	//nPM1300_InitData();
 
-	VibrateStart();
-	k_sleep(K_MSEC(100));
-	VibrateStop();
+	//VibrateStart();
+	//k_sleep(K_MSEC(100));
+	//VibrateStop();
 
 #ifdef PMU_DEBUG
 	LOGD("pmu_init done!");
 #endif
 }
+
+#ifndef GPIO_ACT_I2C
+void test_i2c(void)
+{
+	struct device *i2c_dev;
+
+	LOGD("Starting i2c scanner...");
+	i2c_dev = DEVICE_DT_GET(PMU_DEV);
+	if(!i2c_dev)
+	{
+		LOGD("I2C: Device driver not found.");
+		return;
+	}
+	i2c_configure(i2c_dev, I2C_SPEED_SET(I2C_SPEED_FAST));
+
+	LOGD("Value of NRF_TWIM1_NS->PSEL.SCL: %ld",NRF_TWIM1_NS->PSEL.SCL);
+	LOGD("Value of NRF_TWIM1_NS->PSEL.SDA: %ld",NRF_TWIM1_NS->PSEL.SDA);
+	LOGD("Value of NRF_TWIM1_NS->FREQUENCY: %ld",NRF_TWIM1_NS->FREQUENCY);
+	LOGD("26738688 -> 100k");
+	LOGD("67108864 -> 250k");
+	LOGD("104857600 -> 400k");
+
+	for (uint8_t i = 0; i < 0x7f; i++)
+	{
+		struct i2c_msg msgs[1];
+		uint8_t dst = 1;
+		uint8_t error = 0u;
+
+		/* Send the address to read from */
+		msgs[0].buf = &dst;
+		msgs[0].len = 1U;
+		msgs[0].flags = I2C_MSG_WRITE | I2C_MSG_STOP;
+
+		error = i2c_transfer(i2c_dev, &msgs[0], 1, i);
+		if(error == 0)
+		{
+			LOGD("0x%2x device address found on I2C Bus", i);
+		}
+		else
+		{
+			//LOGD("error %d", error);
+		}
+	}
+}
+#endif
 
 void test_pmu(void)
 {
@@ -1127,11 +1337,11 @@ int MAX20303_CheckPMICStatusRegisters(unsigned char buf_results[5])
 { 
 	int ret;
 
-	ret  = MAX20353_ReadReg(REG_STATUS0, &buf_results[0]);
-	ret |= MAX20353_ReadReg(REG_STATUS1, &buf_results[1]);
-	ret |= MAX20353_ReadReg(REG_STATUS2, &buf_results[2]);
-	ret |= MAX20353_ReadReg(REG_STATUS3, &buf_results[3]);
-	ret |= MAX20353_ReadReg(REG_SYSTEM_ERROR, &buf_results[4]);
+	ret  = nPM1300_ReadReg(REG_STATUS0, &buf_results[0]);
+	ret |= nPM1300_ReadReg(REG_STATUS1, &buf_results[1]);
+	ret |= nPM1300_ReadReg(REG_STATUS2, &buf_results[2]);
+	ret |= nPM1300_ReadReg(REG_STATUS3, &buf_results[3]);
+	ret |= nPM1300_ReadReg(REG_SYSTEM_ERROR, &buf_results[4]);
 	return ret;
 }
 
@@ -1184,7 +1394,7 @@ void test_soc_status(void)
 	MAX20353_SOCReadReg(0x0E, &MSB, &LSB);//OCV
 	OCV = ((MSB<<8)+LSB);
 
-	MAX20353_ReadReg(REG_STATUS0, &Status0);
+	nPM1300_ReadReg(REG_STATUS0, &Status0);
 	Status0 = Status0&0x07;
 
 #ifdef PMU_DEBUG	
@@ -1235,8 +1445,8 @@ void PMUMsgProcess(void)
 	#ifdef PMU_DEBUG
 		LOGD("int");
 	#endif	
-		ret = pmu_interrupt_proc();
-		if(ret)
+		//ret = pmu_interrupt_proc();
+		//if(ret)
 		{
 			pmu_trige_flag = false;
 		}
@@ -1247,8 +1457,8 @@ void PMUMsgProcess(void)
 	#ifdef PMU_DEBUG
 		LOGD("alert");
 	#endif
-		ret = pmu_alert_proc();
-		if(ret)
+		//ret = pmu_alert_proc();
+		//if(ret)
 		{
 			pmu_alert_flag = false;
 		}
@@ -1339,10 +1549,10 @@ void MAX20353_ReadStatus(void)
 {
 	uint8_t Status0,Status1,Status2,Status3;
 	
-	MAX20353_ReadReg(REG_STATUS0, &Status0);
-	MAX20353_ReadReg(REG_STATUS1, &Status1);
-	MAX20353_ReadReg(REG_STATUS2, &Status2);
-	MAX20353_ReadReg(REG_STATUS3, &Status3);
+	nPM1300_ReadReg(REG_STATUS0, &Status0);
+	nPM1300_ReadReg(REG_STATUS1, &Status1);
+	nPM1300_ReadReg(REG_STATUS2, &Status2);
+	nPM1300_ReadReg(REG_STATUS3, &Status3);
 #ifdef PMU_DEBUG
 	LOGD("Status0=0x%02X,Status1=0x%02X,Status2=0x%02X,Status3=0x%02X", Status0, Status1, Status2, Status3); 
 #endif

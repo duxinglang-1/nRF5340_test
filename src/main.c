@@ -44,14 +44,14 @@ void system_init(void)
 	PPG_i2c_off();
 #endif
 	pmu_init();
-	key_init();
-	flash_init();
+	//key_init();
+	//flash_init();
 	
 #ifdef CONFIG_PPG_SUPPORT	
-	PPG_init();
+	//PPG_init();
 #endif
-	ble_init();
-	LogInit();
+	//ble_init();
+	//LogInit();
 }
 
 void work_init(void)
@@ -80,9 +80,11 @@ void system_init_completed(void)
 **************************************************************************/
 int main(void)
 {
+	LOGD("begin");
+
 	work_init();
 	system_init();
-
+	
 //	test_show_string();
 //	test_show_image();
 //	test_show_color();
