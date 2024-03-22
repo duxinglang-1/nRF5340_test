@@ -12,12 +12,18 @@
 #include <zephyr/kernel.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/sys/linear_range.h>
+#include "..\..\nrfxlib\nrf_fuel_gauge\include\nrf_fuel_gauge.h"
 #include "pmu.h"
 #include "npm1300.h"
 #include "datetime.h"
 #include "settings.h"
 #include "external_flash.h"
 #include "logger.h"
+
+static const struct battery_model battery_model = {
+#include "battery_model.inc"
+};
 
 #ifdef PMU_SENSOR_NPM1300
 
@@ -62,6 +68,48 @@ static struct device *i2c_pmu;
 static struct device *gpio_pmu;
 static struct gpio_callback gpio_cb1,gpio_cb2;
 
+/* Linear range for charger terminal voltage */
+static const struct linear_range charger_volt_ranges[] = {
+	LINEAR_RANGE_INIT(3500000, 50000, 0U, 3U), LINEAR_RANGE_INIT(4000000, 50000, 4U, 13U)};
+
+/* Linear range for charger current */
+static const struct linear_range charger_current_range = LINEAR_RANGE_INIT(32000, 2000, 16U, 400U);
+
+/* Linear range for Discharge limit */
+static const struct linear_range discharge_limit_range = LINEAR_RANGE_INIT(268090, 3230, 83U, 415U);
+
+/* Linear range for vbusin current limit */
+static const struct linear_range vbus_current_ranges[] = {
+	LINEAR_RANGE_INIT(100000, 0, 1U, 1U), LINEAR_RANGE_INIT(500000, 100000, 5U, 15U)};
+
+static float max_charge_current;
+static float term_charge_current;
+static int64_t ref_time;
+
+static npm1300_charger_data_t charger_data = {0};
+static npm1300_charger_config_t charger_config = 
+									{
+										4350000,
+										4000000,
+										150000,
+										1000000,
+										500000,
+										{
+											0x7fffffff,
+											0x7fffffff,
+											0x7fffffff,
+											0x7fffffff
+										},
+										10000,
+										3380,
+										1,
+										0,
+										0,
+										true,
+										false,
+										false
+									};
+
 static void test_soc_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(soc_timer, test_soc_timerout, NULL);
 static void pmu_battery_low_shutdown_timerout(struct k_timer *timer_id);
@@ -72,6 +120,10 @@ static void vibrate_start_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(vib_start_timer, vibrate_start_timerout, NULL);
 static void vibrate_stop_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(vib_stop_timer, vibrate_stop_timerout, NULL);
+#ifdef BATTERY_NTC_CHECK
+static void nPM1300_CheckTemp(struct k_timer *timer_id);
+K_TIMER_DEFINE(ntc_check_timer, nPM1300_CheckTemp, NULL);
+#endif
 
 bool vibrate_start_flag = false;
 bool vibrate_stop_flag = false;
@@ -92,6 +144,7 @@ vibrate_msg_t g_vib = {0};
 pmudev_ctx_t pmu_dev_ctx;
 
 extern bool key_pwroff_flag;
+extern int nrf_fuel_gauge_init(const struct nrf_fuel_gauge_init_parameters *parameters, float *v0);
 
 void Delay_ms(unsigned int dly)
 {
@@ -147,7 +200,7 @@ void I2C_SCL_L(void)
 	gpio_pin_set(gpio_pmu, PMU_SCL, 0);
 }
 
-//²úÉúÆðÊ¼ÐÅºÅ
+//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ê¼ï¿½Åºï¿½
 void I2C_Start(void)
 {
 	I2C_SDA_OUT();
@@ -158,7 +211,7 @@ void I2C_Start(void)
 	I2C_SCL_L();
 }
 
-//²úÉúÍ£Ö¹ÐÅºÅ
+//ï¿½ï¿½ï¿½ï¿½Í£Ö¹ï¿½Åºï¿½
 void I2C_Stop(void)
 {
 	I2C_SDA_OUT();
@@ -169,7 +222,7 @@ void I2C_Stop(void)
 	I2C_SDA_H();
 }
 
-//Ö÷»ú²úÉúÓ¦´ðÐÅºÅACK
+//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Åºï¿½ACK
 void I2C_Ack(void)
 {
 	I2C_SDA_OUT();
@@ -180,7 +233,7 @@ void I2C_Ack(void)
 	I2C_SCL_L();
 }
 
-//Ö÷»ú²»²úÉúÓ¦´ðÐÅºÅNACK
+//ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½ï¿½Åºï¿½NACK
 void I2C_NAck(void)
 {
 	I2C_SDA_OUT();
@@ -191,9 +244,9 @@ void I2C_NAck(void)
 	I2C_SCL_L();
 }
 
-//µÈ´ý´Ó»úÓ¦´ðÐÅºÅ
-//·µ»ØÖµ£º1 ½ÓÊÕÓ¦´ðÊ§°Ü
-//		  0 ½ÓÊÕÓ¦´ð³É¹¦
+//ï¿½È´ï¿½ï¿½Ó»ï¿½Ó¦ï¿½ï¿½ï¿½Åºï¿½
+//ï¿½ï¿½ï¿½ï¿½Öµï¿½ï¿½1 ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½Ê§ï¿½ï¿½
+//		  0 ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½ï¿½É¹ï¿½
 uint8_t I2C_Wait_Ack(void)
 {
 	uint8_t val,tempTime=0;
@@ -219,13 +272,13 @@ uint8_t I2C_Wait_Ack(void)
 	return 0;
 }
 
-//I2C ·¢ËÍÒ»¸ö×Ö½Ú
+//I2C ï¿½ï¿½ï¿½ï¿½Ò»ï¿½ï¿½ï¿½Ö½ï¿½
 uint8_t I2C_Write_Byte(uint8_t txd)
 {
 	uint8_t i=0;
 
 	I2C_SDA_OUT();
-	I2C_SCL_L();//À­µÍÊ±ÖÓ¿ªÊ¼Êý¾Ý´«Êä
+	I2C_SCL_L();//ï¿½ï¿½ï¿½ï¿½Ê±ï¿½Ó¿ï¿½Ê¼ï¿½ï¿½ï¿½Ý´ï¿½ï¿½ï¿½
 
 	for(i=0;i<8;i++)
 	{
@@ -242,7 +295,7 @@ uint8_t I2C_Write_Byte(uint8_t txd)
 	return I2C_Wait_Ack();
 }
 
-//I2C ¶ÁÈ¡Ò»¸ö×Ö½Ú
+//I2C ï¿½ï¿½È¡Ò»ï¿½ï¿½ï¿½Ö½ï¿½
 void I2C_Read_Byte(bool ack, uint8_t *data)
 {
 	uint8_t i=0,receive=0,val=0;
@@ -332,7 +385,7 @@ static bool init_i2c(void)
 	} 
 	else
 	{
-		i2c_configure(i2c_pmu, I2C_SPEED_SET(I2C_SPEED_FAST));
+		i2c_configure(i2c_pmu, I2C_SPEED_SET(I2C_SPEED_STANDARD));
 		return true;
 	}
 #endif	
@@ -375,13 +428,14 @@ static int32_t platform_read(struct device *handle, uint16_t reg, uint8_t *bufp,
 	rslt = i2c_write(handle, data, sizeof(data), NPM1300_I2C_ADDR);
 	if(rslt == 0)
 	{
+		Delay_ms(10);
 		rslt = i2c_read(handle, bufp, len, NPM1300_I2C_ADDR);
 	}
 #endif
 	return rslt;
 }
 
-static int nPM1300_WriteRegMulti(NMP1300_REG reg, uint8_t *value, uint8_t len)
+static int nPM1300_WriteRegMulti(NPM1300_REG reg, uint8_t *value, uint8_t len)
 {
 	int32_t ret;
 
@@ -394,11 +448,11 @@ static int nPM1300_WriteRegMulti(NMP1300_REG reg, uint8_t *value, uint8_t len)
 	{ 
 		ret = NPM1300_NO_ERROR;
 	}
-	
+
 	return ret;
 }
 
-static int nPM1300_WriteReg(NMP1300_REG reg, uint8_t value)
+static int nPM1300_WriteReg(NPM1300_REG reg, uint8_t value)
 { 
     int32_t ret;
 
@@ -415,7 +469,7 @@ static int nPM1300_WriteReg(NMP1300_REG reg, uint8_t value)
 	return ret;
 }
 
-static int nPM1300_ReadReg(NMP1300_REG reg, uint8_t *value)
+static int nPM1300_ReadReg(NPM1300_REG reg, uint8_t *value)
 {
     int32_t ret;
 
@@ -428,11 +482,11 @@ static int nPM1300_ReadReg(NMP1300_REG reg, uint8_t *value)
     {
         ret = NPM1300_NO_ERROR;
     }
-	
+
     return ret;
 }
 
-static int nPM1300_ReadRegMulti(NMP1300_REG reg, uint8_t *value, uint8_t len)
+static int nPM1300_ReadRegMulti(NPM1300_REG reg, uint8_t *value, uint8_t len)
 {
     int32_t ret;
 
@@ -441,8 +495,412 @@ static int nPM1300_ReadRegMulti(NMP1300_REG reg, uint8_t *value, uint8_t len)
         ret = NPM1300_ERROR;
     else
         ret = NPM1300_NO_ERROR;
-	
+
     return ret;
+}
+
+static uint32_t calc_ntc_res(npm1300_charger_config_t config, int32_t temp_mdegc)
+{
+	float inv_t0 = 1.f / 298.15f;
+	float temp = (float)temp_mdegc / 1000000.f;
+	float inv_temp_k = 1.f / (temp + 273.15f);
+
+	return config.thermistor_ohms * exp((float)config.thermistor_beta * (inv_temp_k - inv_t0));
+}
+
+static int set_ntc_thresholds(npm1300_charger_config_t config)
+{
+	int ret;
+	uint8_t idx,data[5];
+	uint16_t code;
+	uint32_t res;
+	
+	for(idx=0;idx<4;idx++)
+	{
+		if(config.temp_thresholds[idx] < INT32_MAX)
+		{
+			res = calc_ntc_res(config, config.temp_thresholds[idx]);
+
+			/* Ref: Datasheet Figure 14: Equation for battery temperature */
+			code = (1024 * res) / (res + config.thermistor_ohms);
+			data[0] = code>>NTCTEMP_MSB_SHIFT;
+			data[1] = code&NTCTEMP_LSB_MASK;
+			
+			ret = nPM1300_WriteRegMulti(REG_NTCCOLD+(2*idx), &data[0], 2);
+			if(ret != NPM1300_NO_ERROR)
+				return ret;
+		}
+	}
+
+	return 0;
+}
+
+static uint16_t adc_get_res(uint8_t msb, uint8_t lsb, uint16_t lsb_shift)
+{
+	return ((uint16_t)msb << ADC_MSB_SHIFT) | ((lsb >> lsb_shift) & ADC_LSB_MASK);
+}
+
+static void calc_temp(npm1300_charger_config_t config, uint16_t code, npm1300_sensor_value_t *valp)
+{
+	/* Ref: Datasheet Figure 42: Battery temperature (Kelvin) */
+	float log_result = log((1024.f / (float)code) - 1);
+	float inv_temp_k = (1.f / 298.15f) - (log_result / (float)config.thermistor_beta);
+
+	float temp = (1.f / inv_temp_k) - 273.15f;
+
+	valp->val1 = (int32_t)temp;
+	valp->val2 = (int32_t)(fmodf(temp, 1.f) * 1000000.f);
+}
+
+static void calc_current(npm1300_charger_config_t config, npm1300_charger_data_t data, npm1300_sensor_value_t *valp)
+{
+	int32_t full_scale_ma;
+	int32_t current;
+
+	switch(data.ibat_stat)
+	{
+	case IBAT_STAT_DISCHARGE:
+		full_scale_ma = config.dischg_limit_microamp / 1000;
+		break;
+	case IBAT_STAT_CHARGE_TRICKLE:
+		full_scale_ma = -config.current_microamp / 10000;
+		break;
+	case IBAT_STAT_CHARGE_COOL:
+		full_scale_ma = -config.current_microamp / 2000;
+		break;
+	case IBAT_STAT_CHARGE_NORMAL:
+		full_scale_ma = -config.current_microamp / 1000;
+		break;
+	default:
+		full_scale_ma = 0;
+		break;
+	}
+
+	current = (data.current * full_scale_ma) / 1024;
+
+	valp->val1 = current / 1000;
+	valp->val2 = (current % 1000) * 1000;
+}
+
+static int nPM1300_ReadSonsor(npm1300_charger_data_t *data)
+{
+	int ret;
+	npm1300_adc_result_t adc_ret = {0};
+	
+	/* Read charge status and error reason */
+	ret = nPM1300_ReadReg(REG_BCHGCHARGESTATUS, &data->status);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	ret = nPM1300_ReadReg(REG_BCHGERRREASON, &data->error);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Read adc results */
+	ret = nPM1300_ReadRegMulti(REG_ADCIBATMEASSTATUS, &adc_ret, sizeof(adc_ret));
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	data->voltage = adc_get_res(adc_ret.msb_vbat, adc_ret.lsb_a, ADC_LSB_VBAT_SHIFT);
+	data->temp = adc_get_res(adc_ret.msb_ntc, adc_ret.lsb_a, ADC_LSB_NTC_SHIFT);
+	data->current = adc_get_res(adc_ret.msb_ibat, adc_ret.lsb_b, ADC_LSB_IBAT_SHIFT);
+	data->ibat_stat = adc_ret.ibat_stat;
+
+	/* Trigger temperature measurement */
+	ret = nPM1300_WriteReg(REG_TASKNTCMEASURE, 0x01);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Trigger current and voltage measurement */
+	ret = nPM1300_WriteReg(REG_TASKVBATMEASURE, 0x01);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Read vbus status */
+	ret = nPM1300_ReadReg(REG_VBUSINSTATUS, &data->vbus_stat);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	return ret;
+}
+
+static void nPM1300_ReadChannel(npm1300_charger_config_t config, npm1300_charger_data_t data, NPM1300_CHANNEL_TYPE chan, npm1300_sensor_value_t *valp)
+{
+	int32_t tmp;
+
+	switch(chan)
+	{
+	case CHANNEL_VOLTAGE:
+		tmp = data.voltage * 5000 / 1024;
+		valp->val1 = tmp / 1000;
+		valp->val2 = (tmp % 1000) * 1000;
+		break;
+	case CHANNEL_TEMP:
+		calc_temp(config, data.temp, valp);
+		break;
+	case CHANNEL_CURRENT:
+		calc_current(config, data, valp);
+		break;
+	case CHANNEL_CHARGER_STATUS:
+		valp->val1 = data.status;
+		valp->val2 = 0;
+		break;
+	case CHANNEL_CHARGER_ERROR:
+		valp->val1 = data.error;
+		valp->val2 = 0;
+		break;
+	case CHANNEL_DESIRED_CHARGING_CURRENT:
+		valp->val1 = config.current_microamp / 1000000;
+		valp->val2 = config.current_microamp % 1000000;
+		break;
+	case CHANNEL_MAX_LOAD_CURRENT:
+		valp->val1 = config.dischg_limit_microamp / 1000000;
+		valp->val2 = config.dischg_limit_microamp % 1000000;
+		break;		
+	}
+}
+
+static int nPM1300_ReadData(float *voltage, float *current, float *temp)
+{
+	npm1300_sensor_value_t value;
+	int ret;
+
+	ret = nPM1300_ReadSonsor(&charger_data);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	nPM1300_ReadChannel(charger_config, charger_data, CHANNEL_VOLTAGE, &value);
+	*voltage = (float)value.val1 + ((float)value.val2 / 1000000);
+
+	nPM1300_ReadChannel(charger_config, charger_data, CHANNEL_TEMP, &value);
+	*temp = (float)value.val1 + ((float)value.val2 / 1000000);
+
+	nPM1300_ReadChannel(charger_config, charger_data, CHANNEL_CURRENT, &value);
+	*current = (float)value.val1 + ((float)value.val2 / 1000000);
+
+	return 0;
+}
+
+#ifdef BATTERY_NTC_CHECK
+uint16_t nPM1300_GetNTCTemp(void)
+{
+	uint8_t data = 0;
+	uint16_t ntc_temp,die_temp;
+
+	nPM1300_ReadReg(REG_ADCNTCRESULTMSB, &data);
+	//ADC NTC measurement result MSB
+	//0b A A A A A A A A
+	//A ADC NTC thermistor Battery measurement result upper 8-bits
+	ntc_temp = (uint16_t)(data<<8);
+
+	nPM1300_ReadReg(REG_ADCTEMPRESULTMSB, &data);
+	//ADC DIE TEMP measurement result MSB
+	//0b A A A A A A A A
+	//ADC Die Temperature measurement result upper 8-bits
+	die_temp = (uint16_t)(data<<8);
+	
+	nPM1300_ReadReg(REG_ADCGP0RESULTLSBS, &data);
+	//ADC result LSB's (Vbat, Ntc, Temp and Vsys)
+	//0b D D C C B B A A
+	//A VBAT measurement result LSBs
+	//B Battery NTC thermistor measurement result LSBs
+	//C Die Temperature measurement result LSBs
+	//D VSYS measurement result LSBs
+	ntc_temp |= ((data>>2)&0x03);
+	die_temp |= ((data>>4)&0x03);
+
+	LOGD("ntc_t:%d, die_t:%d", ntc_temp, die_temp);
+	return ntc_temp;
+}
+
+uint16_t nPM1300_GetDieTemp(void)
+{
+	uint8_t data;
+	uint16_t die_temp;
+
+	nPM1300_ReadReg(REG_ADCTEMPRESULTMSB, &data);
+	//ADC DIE TEMP measurement result MSB
+	//0b A A A A A A A A
+	//ADC Die Temperature measurement result upper 8-bits
+	die_temp = (uint16_t)(data<<8);
+	
+	nPM1300_ReadReg(REG_ADCGP0RESULTLSBS, &data);
+	//ADC result LSB's (Vbat, Ntc, Temp and Vsys)
+	//0b D D C C B B A A
+	//A VBAT measurement result LSBs
+	//B Battery NTC thermistor measurement result LSBs
+	//C Die Temperature measurement result LSBs
+	//D VSYS measurement result LSBs
+	die_temp |= (data&0x30);
+
+	LOGD("die_t:%d", die_temp);
+	return die_temp;
+}
+
+int nPM1300_UpdateRCOMP(int temp)
+{
+#if 0
+	int RCOMP; 
+	// RCOMP value at 20 degrees C 
+	int INI_RCOMP = RCOMP0; 
+	// RCOMP change per degree for every degree above 20 degrees C 
+	float TempCoUp = TEMP_COUP; 
+	// RCOMP change per degree for every degree below 20 degrees C 
+	float TempCoDown = TEMP_CODOWN; 
+	// RCOMP change per degree for every degree below 0 degrees C 
+	float TempCoDownN10 = TEMP_CODOWNN10; 
+	//float temp = 25; // battery temperature degrees C 
+	//float used_tempco = temp> 20 ? TempCoUp : TempCoDown; 
+	//int result = INI_RCOMP + (temp - 20) * used_tempco;  
+
+	float used_tempco; 
+	int result; 
+
+	if(temp>20) // (20, ...) 
+	{
+		used_tempco = TempCoUp;
+		result = INI_RCOMP + (temp - 20) * used_tempco;
+	}
+	else if(temp>0) // {0, 20)
+	{
+		used_tempco = TempCoDown;
+		result = INI_RCOMP + (temp - 20) * used_tempco;
+	}
+	else //(-10, 0)
+	{
+		// calculate result to 0 degree
+		used_tempco = TempCoDown;
+		int result_0 = INI_RCOMP + (0 - 20) * used_tempco;
+		// calculate result < 0 degree
+		used_tempco = TempCoDownN10;
+		result = result_0 + (temp - 0) * used_tempco;
+	}
+
+	RCOMP = (result >= 0xff ? 0xff : (result <= 0 ?  0 : result));
+	//Set RCOMP, SOC 1% change alert, Empty threshold 4%
+	WriteWord(0x0C, RCOMP, 0x5C);
+	return RCOMP;
+#endif	
+}
+
+void nPM1300_UpdateTemp(void)
+{
+	uint8_t thm;
+	int8_t begin,end,tmp;
+	float resistance;
+	int16_t temper=20;
+	uint8_t tmpbuf[128] = {0};
+	static uint8_t pre_thm=0;
+	static uint16_t pre_temper=20;	//ï¿½ï¿½Ê¼ï¿½ï¿½Ä¬ï¿½ï¿½20ï¿½ï¿½
+
+	nPM1300_GetNTCTemp();
+	
+#if 0	
+	thm = MAX20353_ReadTHM();
+	if(thm == pre_thm)
+		return;
+
+	pre_thm = thm;
+	resistance = (float)10/(255.00/thm-1);
+
+	sprintf(tmpbuf, "resistance:%.4f", resistance);
+	//LOGD("%s", tmpbuf);
+
+	begin = 0;
+	end = TEMPER_NUM_MAX-1;
+	while(begin <= end)
+	{
+		tmp = (begin+end)/2;
+		
+		if(ntc_table[tmp].impedance == resistance)
+			break;
+
+		if(ntc_table[tmp].impedance > resistance)
+		{
+			begin = tmp+1;
+		}
+		else
+		{
+			end = tmp-1;
+		}
+	}
+
+	if(begin <= end)	//find success!
+	{
+		temper = ntc_table[tmp].temperature;
+	}
+	else				//select closeet
+	{
+		float com1,com2;
+
+		if(begin == tmp+1)
+		{
+			com1 = fabs(ntc_table[tmp].impedance-resistance);
+			com2 = fabs(ntc_table[tmp+1].impedance-resistance);
+			//sprintf(tmpbuf, "001 com1:%.4f, com2:%04f", com1, com2);
+			//LOGD("%s", tmpbuf);
+			if(com1 > com2)
+			{
+				temper = ntc_table[tmp+1].temperature;
+			}
+			else
+			{
+				temper = ntc_table[tmp].temperature;
+			}
+		}
+		else if(end == tmp-1)
+		{
+			com1 = fabs(ntc_table[tmp].impedance-resistance);
+			com2 = fabs(ntc_table[tmp-1].impedance-resistance);
+			//sprintf(tmpbuf, "002 com1:%.4f, com2:%04f", com1, com2);
+			//LOGD("%s", tmpbuf);
+			if(com1 > com2)
+			{
+				temper = ntc_table[tmp-1].temperature;
+			}
+			else
+			{
+				temper = ntc_table[tmp].temperature;
+			}			
+		}
+	}
+
+	//LOGD("temper:%d", temper);
+
+	if(temper != pre_temper)
+	{
+		pre_temper = temper;
+		nPM1300_UpdateRCOMP(temper);	
+	}
+#endif
+}
+
+static void nPM1300_CheckTemp(struct k_timer *timer_id)
+{
+	pmu_check_temp_flag = true;
+}
+
+void nPM1300_StartCheckTemp(void)
+{
+	//nPM1300_WriteReg(REG_ADCCONFIG, 0x01);			//Make a Single VBAT measurement every 1s
+	//nPM1300_WriteReg(REG_TASKVBATMEASURE, 0x01);	//Start VBAT Measurement
+
+	//Auto measurement intervals
+	//0b B B A A
+	//AA NTC thermistor measurement interval during Charging, 0:4ms 1:64ms 2:128ms 3:1024ms
+	//BB Die Temp measurement interval during Charging, 0:4ms 1:8ms 2:16ms 3:32ms
+	nPM1300_WriteReg(REG_ADCAUTOTIMCONF, 0xff);		
+	nPM1300_WriteReg(REG_TASKNTCMEASURE, 0x01);		//Start Battery NTC thermistor Measurement
+	nPM1300_WriteReg(REG_TASKTEMPMEASURE, 0x01);	//Start Die Temperature Measurement
+	
+	k_timer_start(&ntc_check_timer, K_MSEC(2*1000), K_MSEC(10*1000));
+}
+
+#endif/*BATTERY_NTC_CHECK*/
+
+void nPM1300_Reset(void)
+{
+	nPM1300_WriteReg(REG_TASKSWRESET, 0x01);		//Turn off all Supplies and apply internal reset
 }
 
 void nPM1300_Buck1Disable(void)
@@ -493,7 +951,7 @@ void nPM1300_LDO2Config(void)
 	nPM1300_WriteReg(REG_LDSW2VOUTSEL, 0x08);		//1.8v value:0~23, voltage:1.0v~3.3V(0.1v per step)
 }
 
-void nPM1300_LEDConfig(NMP1300_LED index, bool flag)
+void nPM1300_LEDConfig(NPM1300_LED index, bool flag)
 {
 	static bool init_flag = false;
 
@@ -513,6 +971,211 @@ void nPM1300_LEDConfig(NMP1300_LED index, bool flag)
 		nPM1300_WriteReg(REG_LEDDRV0SET+2*index, 0x01);
 	else
 		nPM1300_WriteReg(REG_LEDDRV0CLR+2*index, 0x01);
+}
+
+
+void nPM1300_GetNTCStatus(void)
+{
+	uint8_t data[5] = {0};
+
+	nPM1300_ReadReg(REG_ADCNTCRSEL, &data[0]);
+	switch(data[0]&0x03)
+	{
+	case 0://No thermistor
+		LOGD("No thermistor");
+		break;
+	case 1://NTC10K
+		LOGD("NTC10K");
+		break;
+	case 2://NTC47K
+		LOGD("NTC47K");
+		break;
+	case 3://NTC100K
+		LOGD("NTC100K");
+		break;
+	}
+
+	nPM1300_ReadRegMulti(REG_NTCCOLD, &data, 2);
+	LOGD("NTCCOLD:%X %X, temp:%d", data[0], data[1], 0);
+	nPM1300_ReadRegMulti(REG_NTCCOOL, &data, 2);
+	LOGD("NTCCOOL:%X %X, temp:%d", data[0], data[1], 0);
+	nPM1300_ReadRegMulti(REG_NTCWARM, &data, 2);
+	LOGD("NTCWARM:%X %X, temp:%d", data[0], data[1], 0);
+	nPM1300_ReadRegMulti(REG_NTCHOT, &data, 2);
+	LOGD("NTCHOT:%X %X, temp:%d", data[0], data[1], 0);
+	
+	
+	nPM1300_ReadReg(REG_NTCSTATUS, &data[0]);	//0b D C B A, A NTCCOLD, B NTCCOOL, C NTCWARM, D NTCHOT
+	switch(data[0]&0x0f)
+	{
+	case 0:
+		LOGD("NTC_NORMAL");
+		break;
+	case 1:
+		LOGD("NTC_COLD");
+		break;
+	case 2:
+		LOGD("NTC_COOL");
+		break;
+	case 4:
+		LOGD("NTC_WARM");
+		break;
+	case 8:
+		LOGD("NTC_HOT");
+		break;
+	}
+		
+	nPM1300_ReadReg(REG_DIETEMPSTATUS, &data[0]);
+	switch(data[0]&0x01)
+	{
+	case 0:
+		LOGD("Die below high threshold");
+		break;
+	case 1:
+		LOGD("Die above high threshold");
+		break;
+	}
+}
+
+void nPM1300_GetUSBStatus(void)
+{
+	uint8_t data;
+	
+	nPM1300_ReadReg(REG_USBCDETECTSTATUS, &data);
+	LOGD("USBCDETECTSTATUS:%0X", data);
+	if(data != 0x00)
+	{
+		switch(data&0x03)//CC1 Charger detection comparator output
+		{
+		case 0:
+			LOGD("cc1 no connection");
+			break;
+		case 1:
+			LOGD("cc1 Default USB 100/500mA");
+			break;
+		case 2:
+			LOGD("cc1 1.5A High Power");
+			break;
+		case 3:
+			LOGD("cc1 3A High Power");
+			break;
+		}
+		switch((data&0x0c)>>2)//CC2 Charger detection comparator output
+		{
+		case 0:
+			LOGD("cc2 no connection");
+			break;
+		case 1:
+			LOGD("cc2 Default USB 100/500mA");
+			break;
+		case 2:
+			LOGD("cc2 1.5A High Power");
+			break;
+		case 3:
+			LOGD("cc2 3A High Power");
+			break;
+		}
+	}
+
+	//k_sleep(K_MSEC(2000));
+}
+
+void nPM1300_GetChargeStatus(void)
+{
+	uint8_t data;
+	
+	nPM1300_ReadReg(REG_BCHGCHARGESTATUS, &data);
+	LOGD("BCHGCHARGESTATUS:%0X", data);
+	if(data != 0x00)
+	{
+	#ifdef PMU_DEBUG
+		LOGD("it is charging!");
+	#endif
+		if((data&0x01) == 0x01)
+			LOGD("Battery is connected.");
+		if((data&0x02) == 0x02)
+			LOGD("Charging completed (Battery Full).");
+		if((data&0x04) == 0x04)
+			LOGD("Trickle charge.");
+		if((data&0x08) == 0x08)
+			LOGD("Constant Current charging.");
+		if((data&0x10) == 0x10)
+			LOGD("Constant Voltage charging.");
+		if((data&0x20) == 0x20)
+			LOGD("Battery re-charge is needed.");
+		if((data&0x40) == 0x20)
+			LOGD("Charging stopped due Die Temp high.");
+		if((data&0x80) == 0x20)
+			LOGD("Supplement Mode Active.");
+	}
+	else
+	{
+	#ifdef PMU_DEBUG
+		LOGD("it is not charging!");
+	#endif
+	}
+}
+
+void nPM1300_GetBatStatus(void)
+{
+	float voltage, current, temp;
+	
+	nPM1300_ReadData(&voltage, &current, &temp);
+	LOGD("vol:%f, current:%f, temp:%f", voltage, current, temp);
+}
+
+uint8_t nPM1300_GetSocStatus(void)
+{
+	float voltage,current,temp;
+	float soc,tte,ttf;
+	float delta;
+	uint8_t bat_soc = 0;
+	int ret;
+
+	ret = nPM1300_ReadData(&voltage, &current, &temp);
+	if(ret != NPM1300_NO_ERROR)
+		return 0;
+
+	delta = (float) k_uptime_delta(&ref_time) / 1000.f;
+
+	soc = nrf_fuel_gauge_process(voltage, current, temp, delta, NULL);
+	//Get predicted "time-to-empty" discharge duration.[s]
+	tte = nrf_fuel_gauge_tte_get();
+	//Get predicted "time-to-full" charging duration.[s]
+	ttf = nrf_fuel_gauge_ttf_get(-max_charge_current, -term_charge_current);
+
+	if(soc > 0.0)
+		bat_soc = (uint8_t)round(soc);
+	else
+		bat_soc = 0;
+
+	LOGD("V: %.3f, I: %.3f, T: %.2f", voltage, current, temp);
+	LOGD("bat_soc: %d, SoC: %.2f, TTE: %.0f, TTF: %.0f", bat_soc, soc, tte, ttf);
+
+	return bat_soc;
+}
+
+void nPM1300_SetBatChargeConfig(void)
+{
+	nPM1300_WriteReg(REG_BCHGCONFIG, 0x00);//Disable charging if battery is warm. 0:enable 1:disable
+}
+
+void nPM1300_SetBatChargeInt(void)
+{
+}
+
+void nPM1300_SetNTCTypeSel(NPM1300_NTC_TYPE data)
+{
+	if(data >= NTC_TYPE_MAX)
+		return;
+
+	nPM1300_WriteReg(REG_ADCNTCRSEL, 0x00+data);
+}
+
+void nPM1300_SetNTCTempThreshold(NPM1300_NTC_TEMP status, int8_t temp)
+{
+	uint16_t ntc_temp;//ntc_temp = round(1024*Rt(Rt+Rb)), RtÎªï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½Â¶Èµï¿½ï¿½ï¿½Öµ,RbÎªï¿½Ú²ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ó¦ï¿½Â¶Èµï¿½ï¿½ï¿½Öµ
+	
 }
 
 void PPG_Power_On(void)
@@ -689,10 +1352,12 @@ void pmu_status_update(void)
 	uint8_t status0,status1;
 	static uint8_t charging_count = 0;
 
-	if(!pmu_check_ok)
+	//nPM1300_GetBatStatus();
+	
+	//if(!pmu_check_ok)
 		return;
 	
-	nPM1300_ReadReg(REG_STATUS0, &status0);
+	//nPM1300_ReadReg(REG_STATUS0, &status0);
 #ifdef PMU_DEBUG
 	LOGD("status0:%d", (status0&0x07));
 #endif	
@@ -760,7 +1425,7 @@ void pmu_status_update(void)
 		break;
 	}
 	
-	nPM1300_ReadReg(REG_STATUS1, &status1);
+	//nPM1300_ReadReg(REG_STATUS1, &status1);
 #ifdef PMU_DEBUG
 	LOGD("status1:%d", (status1&0x08));
 #endif	
@@ -839,142 +1504,292 @@ void pmu_status_update(void)
 
 bool pmu_interrupt_proc(void)
 {
-	uint8_t i,val;
-	uint8_t tmpbuf[128] = {0};
-	uint8_t int0,status0,status1;
+	uint8_t data[5] = {0};
 	int ret;
 
-	if(!pmu_check_ok)
-		return true;
-	
-	ret = nPM1300_ReadReg(REG_INT0, &int0);
-	if(ret == NPM1300_ERROR)
-		return false;
-	
-	if((int0&0x40) == 0x40) //Charger status change INT  
+	Delay_ms(10);
+			
+	nPM1300_ReadReg(REG_EVENTSBCHARGER0SET, &data[0]);
+	LOGD("EVENTSBCHARGER0SET:%0X", data[0]);
+	if(data[0] != 0x00)
 	{
-		ret = nPM1300_ReadReg(REG_STATUS0, &status0);
-		if(ret == NPM1300_ERROR)
-			return false;
-
-	#ifdef PMU_DEBUG
-		LOGD("status0:%d", (status0&0x07));
-	#endif	
-		switch((status0&0x07))
-		{
-		case 0x00://Charger off
-		case 0x01://Charging suspended due to temperature (see battery charger state diagram)
-		case 0x07://Charger fault condition (see battery charger state diagram) 
-			g_chg_status = BAT_CHARGING_NO;
-			break;
-			
-		case 0x02://Pre-charge in progress
-		case 0x03://Fast-charge constant current mode in progress
-		case 0x04://Fast-charge constant voltage mode in progress
-			g_chg_status = BAT_CHARGING_PROGRESS;
-			break;
-
-		case 0x05://Maintain charge in progress
-			break;
-			
-		case 0x06://Maintain charger timer done
-			if(g_chg_status != BAT_CHARGING_FINISHED)
-			{
-				g_chg_status = BAT_CHARGING_FINISHED;
-			#ifdef PMU_DEBUG
-				LOGD("charging finished!");
-			#endif
-
-			#ifdef BATTERY_SOC_GAUGE
-				//g_bat_soc = MAX20353_CalculateSOC();
-			#ifdef PMU_DEBUG
-				LOGD("g_bat_soc:%d", g_bat_soc);
-			#endif
-				if(g_bat_soc >= 95)
-					g_bat_soc = 100;
-
-				last_bat_soc = g_bat_soc;
-			#endif
-			}
-			break;
-		}
+		nPM1300_WriteReg(REG_EVENTSBCHARGER0CLR, data[0]);
+		if((data[0]&0x01) == 0x01)
+			LOGD("Cold Battery detected from NTC measure.");
+		if((data[0]&0x02) == 0x02)
+			LOGD("Cool Battery detected from NTC measure.");
+		if((data[0]&0x04) == 0x04)
+			LOGD("Warm Battery detected from NTC measure.");
+		if((data[0]&0x08) == 0x08)
+			LOGD("Hot Battery detected from NTC measure.");
+		if((data[0]&0x10) == 0x10)
+			LOGD("die high temperature detected from Die Temp measure.");
+		if((data[0]&0x20) == 0x20)
+			LOGD("die resume temperature detected from Die Temp measure.");
 	}
 	
-	if((int0&0x08) == 0x08) //USB OK Int
+	nPM1300_ReadReg(REG_EVENTSBCHARGER1SET, &data[0]);
+	LOGD("EVENTSBCHARGER1SET:%0X", data[0]);
+	if(data[0] != 0x00)
 	{
-		ret = nPM1300_ReadReg(REG_STATUS1, &status1);
-		if(ret == NPM1300_ERROR)
-			return false;
+		nPM1300_WriteReg(REG_EVENTSBCHARGER1CLR, data[0]);
+		if((data[0]&0x01) == 0x01)
+			LOGD("supplement mode activated.");
+		if((data[0]&0x02) == 0x02)
+			LOGD("Trickle Charge started.");
+		if((data[0]&0x04) == 0x04)
+			LOGD("Constant Current charging started.");
+		if((data[0]&0x08) == 0x08)
+			LOGD("Constant Voltage charging started.");
+		if((data[0]&0x10) == 0x10)
+			LOGD("charging completed (Battery Full).");
+		if((data[0]&0x20) == 0x20)
+			LOGD("charging error.");
+	}
+	
+	nPM1300_ReadReg(REG_EVENTSBCHARGER2SET, &data[0]);
+	LOGD("EVENTSBCHARGER2SET:%0X", data[0]);
+	if(data[0] != 0x00)
+	{
+		nPM1300_WriteReg(REG_EVENTSBCHARGER2CLR, data[0]);
+		if((data[0]&0x01) == 0x01)
+			LOGD("Battery Detected.");
+		if((data[0]&0x02) == 0x02)
+			LOGD("Battery Lost.");
+		if((data[0]&0x04) == 0x04)
+			LOGD("Battery re-charge needed.");
+	}
+	
+	nPM1300_ReadReg(REG_EVENTSVBUSIN0SET, &data[0]);
+	LOGD("EVENTSVBUSIN0SET:%0X", data[0]);
+	if(data[0] != 0x00)
+	{
+		nPM1300_WriteReg(REG_EVENTSVBUSIN0CLR, data[0]);
+		if((data[0]&0x01) == 0x01)
+			LOGD("VBUS input detected.");
+		if((data[0]&0x02) == 0x02)
+			LOGD("VBUS input removed.");
+		if((data[0]&0x04) == 0x04)
+			LOGD("VBUS Over Voltage Detected.");
+		if((data[0]&0x08) == 0x08)
+			LOGD("VBUS Over Removed.");
+		if((data[0]&0x10) == 0x10)
+			LOGD("VBUS Under Voltage Detected.");
+		if((data[0]&0x20) == 0x20)
+			LOGD("VBUS Under Removed.");
+	}
 
+	nPM1300_ReadReg(REG_EVENTSVBUSIN1SET, &data[0]);
+	LOGD("EVENTSVBUSIN1SET:%0X", data[0]);
+	if(data[0] != 0x00)
+	{
+		nPM1300_WriteReg(REG_EVENTSVBUSIN1CLR, data[0]);
+		if((data[0]&0x01) == 0x01)
+			LOGD("Thermal Warning detected.");
+		if((data[0]&0x02) == 0x02)
+			LOGD("Thermal Warning removed.");
+		if((data[0]&0x04) == 0x04)
+			LOGD("Thermal Shutown detected.");
+		if((data[0]&0x08) == 0x08)
+			LOGD("Thermal Shutdown removed.");
+		if((data[0]&0x10) == 0x10)
+			LOGD("when Voltage on CC1 changes.");
+		if((data[0]&0x20) == 0x20)
+			LOGD("when Voltage on CC2 changes.");
+	}
+
+	nPM1300_ReadReg(REG_USBCDETECTSTATUS, &data[0]);
+	LOGD("USBCDETECTSTATUS:%0X", data[0]);
+	if(data[0] != 0x00)
+	{
 	#ifdef PMU_DEBUG
-		LOGD("status1:%d", (status1&0x08));
+		LOGD("charger has been inserted!");
 	#endif
-		if((status1&0x08) == 0x08) //USB OK   
+		charger_is_connected = true;
+	
+		switch(data[0]&0x03)//CC1 Charger detection comparator output
 		{
+		case 0:
 		#ifdef PMU_DEBUG
-			LOGD("charger push in!");
-		#endif	
-			charger_is_connected = true;
+			LOGD("cc1 no connection");
+		#endif
+			break;
+		case 1:
+		#ifdef PMU_DEBUG
+			LOGD("c1 Default USB 100/500mA");
+		#endif
+			break;
+		case 2:
+		#ifdef PMU_DEBUG
+			LOGD("cc1 1.5A High Power");
+		#endif
+			break;
+		case 3:
+		#ifdef PMU_DEBUG
+			LOGD("cc1 3A High Power");
+		#endif
+			break;
+		}
+		switch((data[0]&0x0c)>>2)//CC2 Charger detection comparator output
+		{
+		case 0:
+		#ifdef PMU_DEBUG
+			LOGD("cc2 no connection");
+		#endif
+			break;
+		case 1:
+		#ifdef PMU_DEBUG
+			LOGD("cc2 Default USB 100/500mA");
+		#endif
+			break;
+		case 2:
+		#ifdef PMU_DEBUG
+			LOGD("cc2 1.5A High Power");
+		#endif
+			break;
+		case 3:
+		#ifdef PMU_DEBUG
+			LOGD("cc2 3A High Power");
+		#endif
+			break;
+		}
+
+		pmu_battery_stop_shutdown();
+
+	#ifdef CONFIG_FACTORY_TEST_SUPPORT
+		FTPMUStatusUpdate(2);
+	#endif	
+	}
+	else
+	{
+	#ifdef PMU_DEBUG
+		LOGD("charger has been removed!");
+	#endif
+		charger_is_connected = false;
+		g_chg_status = BAT_CHARGING_NO;
+
+	#ifdef BATTERY_SOC_GAUGE	
+		g_bat_soc = nPM1300_GetSocStatus();
+		if(g_bat_soc > 100)
+			g_bat_soc = 100;
 		
-			pmu_battery_stop_shutdown();
-			//InitCharger();
-		
-			g_chg_status = BAT_CHARGING_PROGRESS;
+		if(g_bat_soc < 4)
+		{
+			g_bat_level = BAT_LEVEL_VERY_LOW;
+			pmu_battery_low_shutdown();
+		}
+		else if(g_bat_soc < 7)
+		{
+			g_bat_level = BAT_LEVEL_LOW;
+		}
+		else if(g_bat_soc < 80)
+		{
+			g_bat_level = BAT_LEVEL_NORMAL;
 		}
 		else
-		{		
-		#ifdef PMU_DEBUG
-			LOGD("charger push out!");
-		#endif
-			charger_is_connected = false;
-			
-			g_chg_status = BAT_CHARGING_NO;
-
-		#ifdef BATTERY_SOC_GAUGE	
-			//g_bat_soc = MAX20353_CalculateSOC();
-			if(g_bat_soc > 100)
-				g_bat_soc = 100;
-			if(g_bat_soc > last_bat_soc)
-				g_bat_soc = last_bat_soc;
-			
-			if(g_bat_soc < 4)
-			{
-				g_bat_level = BAT_LEVEL_VERY_LOW;
-				pmu_battery_low_shutdown();
-			}
-			else if(g_bat_soc < 7)
-			{
-				g_bat_level = BAT_LEVEL_LOW;
-			}
-			else if(g_bat_soc < 80)
-			{
-				g_bat_level = BAT_LEVEL_NORMAL;
-			}
-			else
-			{
-				g_bat_level = BAT_LEVEL_GOOD;
-			}
-		#endif
-
-			ExitNotify();
+		{
+			g_bat_level = BAT_LEVEL_GOOD;
 		}
-		
+	#endif
+
 	#ifdef CONFIG_FACTORY_TEST_SUPPORT
 		FTPMUStatusUpdate(2);
 	#endif
-
-	#ifdef CONFIG_IMU_SUPPORT
-		MAX20353_LDO1Disable();
-		MAX20353_LDO1Config();
-		imu_sensor_init();
-	#endif
 	}
 
-	val = gpio_pin_get_raw(gpio_pmu, PMU_EINT);//xb add 20201202 ·ÀÖ¹¶à¸öÖÐ¶ÏÍ¬Ê±´¥·¢£¬MCUÃ»¼°Ê±´¦Àíµ¼ÖÂPMUÖÐ¶Ï½ÅÒ»Ö±À­µÍ
-	if(val == 0)
-		return false;
+	nPM1300_ReadReg(REG_NTCSTATUS, &data[0]);	//0b D C B A, A NTCCOLD, B NTCCOOL, C NTCWARM, D NTCHOT
+	switch(data[0]&0x0f)
+	{
+	case 0:
+		LOGD("NTC_NORMAL");
+		break;
+	case 1:
+		LOGD("NTC_COLD");
+		break;
+	case 2:
+		LOGD("NTC_COOL");
+		break;
+	case 4:
+		LOGD("NTC_WARM");
+		break;
+	case 8:
+		LOGD("NTC_HOT");
+		break;
+	}
+	
+	nPM1300_ReadReg(REG_BCHGCHARGESTATUS, &data[0]);
+	LOGD("BCHGCHARGESTATUS:%0X", data[0]);
+	if(data[0] != 0x00)
+	{
+	#ifdef PMU_DEBUG
+		LOGD("it is charging!");
+	#endif
+		if((data[0]&0x01) == 0x01)
+		{
+			LOGD("Battery is connected.");
+			g_chg_status = BAT_CHARGING_NO;
+		}
+		if((data[0]&0x02) == 0x02)
+		{
+			LOGD("Charging completed (Battery Full).");
+			g_chg_status = BAT_CHARGING_FINISHED;
+		}
+		if((data[0]&0x04) == 0x04)
+		{
+			LOGD("Trickle charge.");
+			g_chg_status = BAT_CHARGING_PROGRESS;
+		}
+		if((data[0]&0x08) == 0x08)
+		{
+			LOGD("Constant Current charging.");
+			g_chg_status = BAT_CHARGING_PROGRESS;
+		}
+		if((data[0]&0x10) == 0x10)
+		{
+			LOGD("Constant Voltage charging.");
+			g_chg_status = BAT_CHARGING_PROGRESS;
+		}
+		if((data[0]&0x20) == 0x20)
+		{
+			LOGD("Battery re-charge is needed.");
+			g_chg_status = BAT_CHARGING_PROGRESS;
+		}
+		if((data[0]&0x40) == 0x20)
+		{
+			LOGD("Charging stopped due Die Temp high.");
+			g_chg_status = BAT_CHARGING_NO;
+		}
+		if((data[0]&0x80) == 0x20)
+		{
+			LOGD("Supplement Mode Active.");
+			g_chg_status = BAT_CHARGING_PROGRESS;
+		}
+	}
 	else
-		return true;
+	{
+	#ifdef PMU_DEBUG
+		LOGD("it is not charging!");
+	#endif
+		g_chg_status = BAT_CHARGING_NO;
+	}
+
+	//ISetMsb = floor(Ichg(mA)/4), ISetLsb = (Ichg(mA)%2 == 1 ? 1 : 0), from 32 mA to 800 mA, in 2 mA steps
+	nPM1300_ReadRegMulti(REG_BCHGISETMSB, &data, 2);
+	LOGD("BCHGISETMSB:%0X %0X, Ichg=%dmA", data[0],data[1], 4*data[0]+2*(data[1]%2));
+	
+	nPM1300_ReadReg(REG_BCHGITERMSEL, &data[0]);
+	switch(data[0])
+	{
+	case 0:
+		LOGD("10%(default)");
+		break;
+	case 1:
+		LOGD("20%(default)");
+		break;
+	}
+
+	nPM1300_WriteReg(REG_VBUSINILIM0, 0x05);
+	nPM1300_WriteReg(REG_TASKUPDATEILIMSW, 0x01);
 }
 
 void PmuInterruptHandle(void)
@@ -991,6 +1806,7 @@ bool pmu_alert_proc(void)
 	int ret;
 	uint8_t MSB=0,LSB=0;
 
+#if 0
 	if(!pmu_check_ok)
 		return true;
 
@@ -1084,7 +1900,8 @@ SOC_RESET:
 		return false;
 
 	return true;
-#endif	
+#endif
+#endif
 }
 
 void PmuAlertHandle(void)
@@ -1096,7 +1913,7 @@ void nPM1300_InitData(void)
 {
 	uint8_t status0,status1;
 	
-	nPM1300_ReadReg(REG_STATUS0, &status0);
+	//nPM1300_ReadReg(REG_STATUS0, &status0);
 	switch((status0&0x07))
 	{
 	case 0x00://Charger off
@@ -1117,7 +1934,7 @@ void nPM1300_InitData(void)
 		break;
 	}
 	
-	nPM1300_ReadReg(REG_STATUS1, &status1);
+	//nPM1300_ReadReg(REG_STATUS1, &status1);
 	if((status1&0x08) == 0x08) //USB OK   
 	{
 		charger_is_connected = true;
@@ -1191,14 +2008,8 @@ void nPM1300_InitData(void)
 	}
 }
 
-void nPM1300_GetDeviceID(uint8_t *Device_ID)
+void nPM1300_PowerSupply(void)
 {
-	nPM1300_ReadReg(REG_HARDWARE_ID, Device_ID);
-}
-
-bool nPM1300_Init(void)
-{
-	//¹©µçµçÑ¹¼°µçÁ÷ÅäÖÃ
 	nPM1300_Buck1Disable();
 	nPM1300_Buck1Config();
 	nPM1300_Buck2Disable();
@@ -1207,19 +2018,177 @@ bool nPM1300_Init(void)
 	nPM1300_LDO1Config();
 	nPM1300_LDO2Disable();
 	nPM1300_LDO2Config();
+
+	//LED¿ØÖÆ
+	nPM1300_LEDConfig(LED_0, true);
+	nPM1300_LEDConfig(LED_1, true);
+	nPM1300_LEDConfig(LED_2, true);
+	nPM1300_LEDConfig(LED_0, false);
+	nPM1300_LEDConfig(LED_1, false);
+	nPM1300_LEDConfig(LED_2, false);
+}
+
+void nPM1300_SOCInit(void)
+{
+	npm1300_sensor_value_t value;
+	struct nrf_fuel_gauge_init_parameters parameters = { .model = &battery_model };
+	int ret;
+
+	ret = nPM1300_ReadData(&parameters.v0, &parameters.i0, &parameters.t0);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Store charge nominal and termination current, needed for ttf calculation */
+	nPM1300_ReadChannel(charger_config, charger_data, CHANNEL_DESIRED_CHARGING_CURRENT, &value);
+	max_charge_current = (float)value.val1 + ((float)value.val2 / 1000000);
+	term_charge_current = max_charge_current / 10.f;
+
+	nrf_fuel_gauge_init(&parameters, NULL);
+
+	ref_time = k_uptime_get();
+
+	test_soc();
+}
+
+int nPM1300_ChargerInit(void)
+{
+	uint8_t data[5] = {0};
+	uint16_t idx;
+	int ret;
 	
-	nPM1300_LEDConfig(NMP1300_LED0, true);
-	nPM1300_LEDConfig(NMP1300_LED1, true);
-	nPM1300_LEDConfig(NMP1300_LED2, true);
-	nPM1300_LEDConfig(NMP1300_LED0, false);
-	nPM1300_LEDConfig(NMP1300_LED1, false);
-	nPM1300_LEDConfig(NMP1300_LED2, false);
+	//Set GPIO_0 mode for GPO Interrupt
+	nPM1300_WriteReg(REG_GPIO_0_MODE, 0x05);
 
-	//µçÁ¿¼Æ
-	//MAX20353_SOCInit();
+	//Select Battery NTC
+	nPM1300_WriteReg(REG_ADCNTCRSEL, charger_config.thermistor_idx);
 
-	//³äµçÅäÖÃ
-	//MAX20353_ChargerInit();
+	ret = set_ntc_thresholds(charger_config);
+	if(ret != 0)
+		return ret;
+
+	/* Configure termination voltages */
+	ret = linear_range_group_get_win_index(charger_volt_ranges, ARRAY_SIZE(charger_volt_ranges),
+					       					charger_config.term_microvolt, charger_config.term_microvolt,
+					       					&idx);
+	if(ret == -EINVAL)
+		return ret;
+
+	ret = nPM1300_WriteReg(REG_BCHGVTERM, idx);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	ret = linear_range_group_get_win_index(charger_volt_ranges, ARRAY_SIZE(charger_volt_ranges),
+					       					charger_config.term_warm_microvolt,
+					       					charger_config.term_warm_microvolt, &idx);
+	if(ret == -EINVAL)
+		return ret;
+
+	ret = nPM1300_WriteReg(REG_BCHGVTERMR, idx);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Set current, allow rounding down to closest value */
+	ret = linear_range_get_win_index(&charger_current_range,
+					 					charger_config.current_microamp - charger_current_range.step,
+					 					charger_config.current_microamp, &idx);
+	if(ret == -EINVAL)
+		return ret;
+
+	data[0] = idx/2;
+	data[1] = idx&0x01;
+	ret = nPM1300_WriteRegMulti(REG_BCHGISETMSB, data ,2);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Set discharge limit, allow rounding down to closest value */
+	ret = linear_range_get_win_index(&discharge_limit_range,
+					 					charger_config.dischg_limit_microamp - discharge_limit_range.step,
+					 					charger_config.dischg_limit_microamp, &idx);
+	if(ret == -EINVAL)
+		return ret;
+
+	data[0] = idx/2;
+	data[1] = idx&0x01;
+	ret = nPM1300_WriteRegMulti(REG_BCHGISETDISCHARGEMSB, data ,2);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Configure vbus current limit */
+	ret = linear_range_group_get_win_index(vbus_current_ranges, ARRAY_SIZE(vbus_current_ranges),
+					       charger_config.vbus_limit_microamp,
+					       charger_config.vbus_limit_microamp, &idx);
+	if (ret == -EINVAL)
+		return ret;
+
+	ret = nPM1300_WriteReg(REG_VBUSINILIMSTARTUP, idx);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Configure trickle voltage threshold */
+	ret = nPM1300_WriteReg(REG_BCHGVTRICKLESEL, charger_config.trickle_sel);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Configure termination current */
+	ret = nPM1300_WriteReg(REG_BCHGITERMSEL, charger_config.iterm_sel);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Enable current measurement */
+	ret = nPM1300_WriteReg(REG_ADCIBATMEASEN, 0x01);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Trigger current and voltage measurement */
+	ret = nPM1300_WriteReg(REG_TASKVBATMEASURE, 0x01);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Trigger temperature measurement */
+	ret = nPM1300_WriteReg(REG_TASKNTCMEASURE, 0x01);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Enable automatic temperature measurements during charging */
+	ret = nPM1300_WriteReg(REG_TASKAUTOTIMUPDATE, 0x01);
+	if(ret != NPM1300_NO_ERROR)
+		return ret;
+
+	/* Enable charging at low battery if configured */
+	if(charger_config.vbatlow_charge_enable)
+	{
+		ret = nPM1300_WriteReg(REG_BCHGVBATLOWEN, 0x01);
+		if(ret != NPM1300_NO_ERROR)
+			return ret;
+	}
+
+	/* Disable automatic recharging if configured */
+	if(charger_config.disable_recharge)
+	{
+		ret = nPM1300_WriteReg(REG_BCHGDISABLESET, 0x01);
+		if(ret != NPM1300_NO_ERROR)
+			return ret;
+	}
+
+	/* Enable charging if configured */
+	if(charger_config.charging_enable)
+	{
+		ret = nPM1300_WriteReg(REG_BCHGENABLESET, 0x01);
+		if(ret != NPM1300_NO_ERROR)
+			return ret;
+	}	
+
+	return 0;
+}
+
+bool nPM1300_Init(void)
+{
+	//³äµçÉèÖÃ
+	nPM1300_ChargerInit();
+	//SOCµçÁ¿
+	nPM1300_SOCInit();
+	//¹©µçÊä³ö
+	nPM1300_PowerSupply();
 
 	return true;
 }
@@ -1227,7 +2196,7 @@ bool nPM1300_Init(void)
 void pmu_init(void)
 {
 	bool rst;
-	gpio_flags_t flag = GPIO_INPUT|GPIO_PULL_UP;
+	gpio_flags_t flag = GPIO_INPUT|GPIO_PULL_DOWN;
 
 #ifdef PMU_DEBUG
 	LOGD("pmu_init");
@@ -1241,20 +2210,21 @@ void pmu_init(void)
 		return;
 	}
 
+#if 1
 	//charger interrupt
 	gpio_pin_configure(gpio_pmu, PMU_EINT, flag);
 	gpio_pin_interrupt_configure(gpio_pmu, PMU_EINT, GPIO_INT_DISABLE);
 	gpio_init_callback(&gpio_cb1, PmuInterruptHandle, BIT(PMU_EINT));
 	gpio_add_callback(gpio_pmu, &gpio_cb1);
-	gpio_pin_interrupt_configure(gpio_pmu, PMU_EINT, GPIO_INT_ENABLE|GPIO_INT_EDGE_FALLING);
+	gpio_pin_interrupt_configure(gpio_pmu, PMU_EINT, GPIO_INT_ENABLE|GPIO_INT_EDGE_RISING);
 
 	//alert interrupt
 	gpio_pin_configure(gpio_pmu, PMU_ALRTB, flag);
 	gpio_pin_interrupt_configure(gpio_pmu, PMU_ALRTB, GPIO_INT_DISABLE);
 	gpio_init_callback(&gpio_cb2, PmuAlertHandle, BIT(PMU_ALRTB));
 	gpio_add_callback(gpio_pmu, &gpio_cb2);
-	gpio_pin_interrupt_configure(gpio_pmu, PMU_ALRTB, GPIO_INT_ENABLE|GPIO_INT_EDGE_FALLING);
-
+	gpio_pin_interrupt_configure(gpio_pmu, PMU_ALRTB, GPIO_INT_ENABLE|GPIO_INT_EDGE_RISING);
+#endif
 	rst = init_i2c();
 	if(!rst)
 		return;
@@ -1332,81 +2302,11 @@ void test_pmu(void)
     pmu_init();
 }
 
-//******************************************************************************
-int MAX20303_CheckPMICStatusRegisters(unsigned char buf_results[5])
-{ 
-	int ret;
-
-	ret  = nPM1300_ReadReg(REG_STATUS0, &buf_results[0]);
-	ret |= nPM1300_ReadReg(REG_STATUS1, &buf_results[1]);
-	ret |= nPM1300_ReadReg(REG_STATUS2, &buf_results[2]);
-	ret |= nPM1300_ReadReg(REG_STATUS3, &buf_results[3]);
-	ret |= nPM1300_ReadReg(REG_SYSTEM_ERROR, &buf_results[4]);
-	return ret;
-}
-
 #ifdef BATTERY_SOC_GAUGE
 void test_soc_status(void)
 {
-	uint8_t MSB,LSB;
-	uint8_t RCOMP,Status0,Status1,Status2,Status3;
-	uint16_t VCell,SOC,CRate,MODE,Version,HIBRT,Config,Status,VALRT,VReset,CMD,OCV;
-	uint8_t strbuf[512] = {0};
-	
-	MAX20353_SOCReadReg(0x02, &MSB, &LSB);//vcell
-	VCell = ((MSB<<8)+LSB);
-	VCell = VCell*625/8/1000;
-	
-	MAX20353_SOCReadReg(0x04, &MSB, &LSB);//soc
-	SOC = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x0C, &MSB, &LSB);//Config RCOMP(MSB)
-	RCOMP = MSB;
-	Config = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x16, &MSB, &LSB);//CRate
-	CRate = ((MSB<<8)+LSB);
-	if(CRate&0x8000==0x8000)
-		CRate |= 0xFFFF0000;
-	CRate = CRate*208;
-	
-	MAX20353_SOCReadReg(0x06, &MSB, &LSB);//MODE
-	MODE = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x08, &MSB, &LSB);//Version
-	Version = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x0A, &MSB, &LSB);//HIBRT
-	HIBRT = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x1A, &MSB, &LSB);//Status
-	Status = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x14, &MSB, &LSB);//VALRT
-	VALRT = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x18, &MSB, &LSB);//VReset
-	VReset = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0xFE, &MSB, &LSB);//CMD
-	CMD = ((MSB<<8)+LSB);
-	
-	MAX20353_SOCReadReg(0x0E, &MSB, &LSB);//OCV
-	OCV = ((MSB<<8)+LSB);
-
-	nPM1300_ReadReg(REG_STATUS0, &Status0);
-	Status0 = Status0&0x07;
-
-#ifdef PMU_DEBUG	
-	sprintf(strbuf, "%02d/%02d/%04d-%02d:%02d:%02d %2.3f,%3.8f,0x%02X,%1.5f,0x%04X,0x%04X,0x%04X,0x%04X,0x%04X,0x%04X,0x%04X,0x%04X,0x%04X,%d\n", 
-				date_time.day,date_time.month,date_time.year,date_time.hour,date_time.minute,date_time.second,
-				(float)VCell/1000, (float)SOC/256.0,
-				RCOMP,
-				(float)CRate/1000/100,
-				MODE, Version, HIBRT, Config, Status, VALRT, VReset, CMD, OCV, Status0);
-
-	LOGD("%s", strbuf);
-#endif
+	//nPM1300_GetBatStatus();
+	nPM1300_GetSocStatus();
 }
 
 void test_soc_timerout(struct k_timer *timer_id)
@@ -1416,14 +2316,16 @@ void test_soc_timerout(struct k_timer *timer_id)
 
 void test_soc(void)
 {
-	k_timer_start(&soc_timer, K_MSEC(10*1000), K_MSEC(15*1000));
+	k_timer_start(&soc_timer, K_MSEC(1*1000), K_MSEC(1*1000));
 }
 #endif/*BATTERY_SOC_GAUGE*/
 
-#ifdef BATTERT_NTC_CHECK
+#ifdef BATTERY_NTC_CHECK
 void PMUUpdateTempForSOC(void)
 {
-	MAX20353_UpdateTemper();
+	nPM1300_UpdateTemp();
+	nPM1300_GetUSBStatus();
+	nPM1300_GetBatStatus();
 }
 #endif
 
@@ -1443,13 +2345,11 @@ void PMUMsgProcess(void)
 	if(pmu_trige_flag)
 	{
 	#ifdef PMU_DEBUG
-		LOGD("int");
-	#endif	
-		//ret = pmu_interrupt_proc();
-		//if(ret)
-		{
-			pmu_trige_flag = false;
-		}
+		LOGD("usb int");
+	#endif
+		pmu_trige_flag = false;
+
+		pmu_interrupt_proc();
 	}
 	
 	if(pmu_alert_flag)
@@ -1534,27 +2434,13 @@ void PMUMsgProcess(void)
 	}
 #endif
 
-#ifdef BATTERT_NTC_CHECK
+#ifdef BATTERY_NTC_CHECK
 	if(pmu_check_temp_flag)
 	{
-		if(pmu_check_ok)
-			PMUUpdateTempForSOC();
-		
+		LOGD("pmu_check_temp_flag!");
+		PMUUpdateTempForSOC();
 		pmu_check_temp_flag = false;
 	}
-#endif
-}
-
-void MAX20353_ReadStatus(void)
-{
-	uint8_t Status0,Status1,Status2,Status3;
-	
-	nPM1300_ReadReg(REG_STATUS0, &Status0);
-	nPM1300_ReadReg(REG_STATUS1, &Status1);
-	nPM1300_ReadReg(REG_STATUS2, &Status2);
-	nPM1300_ReadReg(REG_STATUS3, &Status3);
-#ifdef PMU_DEBUG
-	LOGD("Status0=0x%02X,Status1=0x%02X,Status2=0x%02X,Status3=0x%02X", Status0, Status1, Status2, Status3); 
 #endif
 }
 
