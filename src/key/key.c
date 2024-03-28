@@ -25,7 +25,7 @@
 #include "settings.h"
 #include "logger.h"
 
-//#define KEY_DEBUG
+#define KEY_DEBUG
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
 #define KEY_PORT DT_NODELABEL(gpio0)
@@ -63,8 +63,8 @@ static void wear_off_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(wear_off_timer, wear_off_timerout, NULL);
 #endif
 
-#define SOS			BIT(0)
-#define POW			BIT(1)
+#define POW			BIT(0)
+#define SOS			BIT(1)
 
 static const key_cfg button_pins[] = 
 {
@@ -956,6 +956,7 @@ void KeyMsgProcess(void)
 #endif
 }
 
+extern void poweroff_confirm(void);
 void key_init(void)
 {
 	int err;
@@ -975,4 +976,6 @@ void key_init(void)
 #ifdef CONFIG_FAST_KEY_SUPPORT
 	fast_key_init();
 #endif
+
+	SetLeftKeyLongPressHandler(poweroff_confirm);
 }

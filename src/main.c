@@ -41,10 +41,10 @@ void system_init(void)
 	InitSystemSettings();
 
 #ifdef CONFIG_PPG_SUPPORT
-	PPG_i2c_off();
+	//PPG_i2c_off();
 #endif
 	pmu_init();
-	//key_init();
+	key_init();
 	//flash_init();
 	
 #ifdef CONFIG_PPG_SUPPORT	

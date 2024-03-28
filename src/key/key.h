@@ -40,8 +40,8 @@ typedef enum
 
 typedef enum
 {
-	KEY_SOS,
 	KEY_POWER,
+	KEY_SOS,
 	KEY_MAX
 }KEY_CODE;
 

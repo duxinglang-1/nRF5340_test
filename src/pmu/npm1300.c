@@ -62,7 +62,6 @@ static uint8_t HardwareID;
 static uint8_t FirmwareID;
 
 static bool pmu_check_ok = false;
-static uint8_t last_bat_soc = 0;
 static uint8_t PMICStatus[4], PMICInts[3];
 static struct device *i2c_pmu;
 static struct device *gpio_pmu;
@@ -737,163 +736,9 @@ uint16_t nPM1300_GetDieTemp(void)
 	return die_temp;
 }
 
-int nPM1300_UpdateRCOMP(int temp)
-{
-#if 0
-	int RCOMP; 
-	// RCOMP value at 20 degrees C 
-	int INI_RCOMP = RCOMP0; 
-	// RCOMP change per degree for every degree above 20 degrees C 
-	float TempCoUp = TEMP_COUP; 
-	// RCOMP change per degree for every degree below 20 degrees C 
-	float TempCoDown = TEMP_CODOWN; 
-	// RCOMP change per degree for every degree below 0 degrees C 
-	float TempCoDownN10 = TEMP_CODOWNN10; 
-	//float temp = 25; // battery temperature degrees C 
-	//float used_tempco = temp> 20 ? TempCoUp : TempCoDown; 
-	//int result = INI_RCOMP + (temp - 20) * used_tempco;  
-
-	float used_tempco; 
-	int result; 
-
-	if(temp>20) // (20, ...) 
-	{
-		used_tempco = TempCoUp;
-		result = INI_RCOMP + (temp - 20) * used_tempco;
-	}
-	else if(temp>0) // {0, 20)
-	{
-		used_tempco = TempCoDown;
-		result = INI_RCOMP + (temp - 20) * used_tempco;
-	}
-	else //(-10, 0)
-	{
-		// calculate result to 0 degree
-		used_tempco = TempCoDown;
-		int result_0 = INI_RCOMP + (0 - 20) * used_tempco;
-		// calculate result < 0 degree
-		used_tempco = TempCoDownN10;
-		result = result_0 + (temp - 0) * used_tempco;
-	}
-
-	RCOMP = (result >= 0xff ? 0xff : (result <= 0 ?  0 : result));
-	//Set RCOMP, SOC 1% change alert, Empty threshold 4%
-	WriteWord(0x0C, RCOMP, 0x5C);
-	return RCOMP;
-#endif	
-}
-
-void nPM1300_UpdateTemp(void)
-{
-	uint8_t thm;
-	int8_t begin,end,tmp;
-	float resistance;
-	int16_t temper=20;
-	uint8_t tmpbuf[128] = {0};
-	static uint8_t pre_thm=0;
-	static uint16_t pre_temper=20;	//��ʼ��Ĭ��20��
-
-	nPM1300_GetNTCTemp();
-	
-#if 0	
-	thm = MAX20353_ReadTHM();
-	if(thm == pre_thm)
-		return;
-
-	pre_thm = thm;
-	resistance = (float)10/(255.00/thm-1);
-
-	sprintf(tmpbuf, "resistance:%.4f", resistance);
-	//LOGD("%s", tmpbuf);
-
-	begin = 0;
-	end = TEMPER_NUM_MAX-1;
-	while(begin <= end)
-	{
-		tmp = (begin+end)/2;
-		
-		if(ntc_table[tmp].impedance == resistance)
-			break;
-
-		if(ntc_table[tmp].impedance > resistance)
-		{
-			begin = tmp+1;
-		}
-		else
-		{
-			end = tmp-1;
-		}
-	}
-
-	if(begin <= end)	//find success!
-	{
-		temper = ntc_table[tmp].temperature;
-	}
-	else				//select closeet
-	{
-		float com1,com2;
-
-		if(begin == tmp+1)
-		{
-			com1 = fabs(ntc_table[tmp].impedance-resistance);
-			com2 = fabs(ntc_table[tmp+1].impedance-resistance);
-			//sprintf(tmpbuf, "001 com1:%.4f, com2:%04f", com1, com2);
-			//LOGD("%s", tmpbuf);
-			if(com1 > com2)
-			{
-				temper = ntc_table[tmp+1].temperature;
-			}
-			else
-			{
-				temper = ntc_table[tmp].temperature;
-			}
-		}
-		else if(end == tmp-1)
-		{
-			com1 = fabs(ntc_table[tmp].impedance-resistance);
-			com2 = fabs(ntc_table[tmp-1].impedance-resistance);
-			//sprintf(tmpbuf, "002 com1:%.4f, com2:%04f", com1, com2);
-			//LOGD("%s", tmpbuf);
-			if(com1 > com2)
-			{
-				temper = ntc_table[tmp-1].temperature;
-			}
-			else
-			{
-				temper = ntc_table[tmp].temperature;
-			}			
-		}
-	}
-
-	//LOGD("temper:%d", temper);
-
-	if(temper != pre_temper)
-	{
-		pre_temper = temper;
-		nPM1300_UpdateRCOMP(temper);	
-	}
-#endif
-}
-
 static void nPM1300_CheckTemp(struct k_timer *timer_id)
 {
 	pmu_check_temp_flag = true;
-}
-
-void nPM1300_StartCheckTemp(void)
-{
-	//nPM1300_WriteReg(REG_ADCCONFIG, 0x01);			//Make a Single VBAT measurement every 1s
-	//nPM1300_WriteReg(REG_TASKVBATMEASURE, 0x01);	//Start VBAT Measurement
-
-	//Auto measurement intervals
-	//0b B B A A
-	//AA NTC thermistor measurement interval during Charging, 0:4ms 1:64ms 2:128ms 3:1024ms
-	//BB Die Temp measurement interval during Charging, 0:4ms 1:8ms 2:16ms 3:32ms
-	nPM1300_WriteReg(REG_ADCAUTOTIMCONF, 0xff);		
-	nPM1300_WriteReg(REG_TASKNTCMEASURE, 0x01);		//Start Battery NTC thermistor Measurement
-	nPM1300_WriteReg(REG_TASKTEMPMEASURE, 0x01);	//Start Die Temperature Measurement
-	
-	k_timer_start(&ntc_check_timer, K_MSEC(2*1000), K_MSEC(10*1000));
 }
 
 #endif/*BATTERY_NTC_CHECK*/
@@ -1037,50 +882,69 @@ void nPM1300_GetNTCStatus(void)
 	}
 }
 
-void nPM1300_GetUSBStatus(void)
+void nPM1300_GetUSBStatus(bool *status)
 {
 	uint8_t data;
 	
 	nPM1300_ReadReg(REG_USBCDETECTSTATUS, &data);
-	LOGD("USBCDETECTSTATUS:%0X", data);
 	if(data != 0x00)
 	{
+		*status = true;
+		
 		switch(data&0x03)//CC1 Charger detection comparator output
 		{
 		case 0:
+		#ifdef PMU_DEBUG
 			LOGD("cc1 no connection");
+		#endif
 			break;
 		case 1:
+		#ifdef PMU_DEBUG	
 			LOGD("cc1 Default USB 100/500mA");
+		#endif
 			break;
 		case 2:
+		#ifdef PMU_DEBUG	
 			LOGD("cc1 1.5A High Power");
+		#endif
 			break;
 		case 3:
+		#ifdef PMU_DEBUG	
 			LOGD("cc1 3A High Power");
+		#endif
 			break;
 		}
 		switch((data&0x0c)>>2)//CC2 Charger detection comparator output
 		{
 		case 0:
+		#ifdef PMU_DEBUG	
 			LOGD("cc2 no connection");
+		#endif
 			break;
 		case 1:
+		#ifdef PMU_DEBUG	
 			LOGD("cc2 Default USB 100/500mA");
+		#endif
 			break;
 		case 2:
+		#ifdef PMU_DEBUG	
 			LOGD("cc2 1.5A High Power");
+		#endif
 			break;
 		case 3:
+		#ifdef PMU_DEBUG	
 			LOGD("cc2 3A High Power");
+		#endif
 			break;
 		}
 	}
-
-	//k_sleep(K_MSEC(2000));
+	else
+	{
+		*status = false;
+	}
 }
 
-void nPM1300_GetChargeStatus(void)
+void nPM1300_GetChargeStatus(BAT_CHARGER_STATUS *status)
 {
 	uint8_t data;
 	
@@ -1092,27 +956,65 @@ void nPM1300_GetChargeStatus(void)
 		LOGD("it is charging!");
 	#endif
 		if((data&0x01) == 0x01)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Battery is connected.");
+		#endif
+		}
 		if((data&0x02) == 0x02)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Charging completed (Battery Full).");
+		#endif
+			*status = BAT_CHARGING_FINISHED;
+		}
 		if((data&0x04) == 0x04)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Trickle charge.");
+		#endif
+			*status = BAT_CHARGING_PROGRESS;
+		}
 		if((data&0x08) == 0x08)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Constant Current charging.");
+		#endif
+			*status = BAT_CHARGING_PROGRESS;
+		}
 		if((data&0x10) == 0x10)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Constant Voltage charging.");
+		#endif
+			*status = BAT_CHARGING_PROGRESS;
+		}
 		if((data&0x20) == 0x20)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Battery re-charge is needed.");
+		#endif
+		}
 		if((data&0x40) == 0x20)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Charging stopped due Die Temp high.");
+		#endif
+			*status = BAT_CHARGING_NO;
+		}
 		if((data&0x80) == 0x20)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Supplement Mode Active.");
+		#endif
+		}
 	}
 	else
 	{
 	#ifdef PMU_DEBUG
 		LOGD("it is not charging!");
 	#endif
+		*status = BAT_CHARGING_NO;
 	}
 }
 
@@ -1149,8 +1051,10 @@ uint8_t nPM1300_GetSocStatus(void)
 	else
 		bat_soc = 0;
 
+#ifdef PMU_DEBUG
 	LOGD("V: %.3f, I: %.3f, T: %.2f", voltage, current, temp);
 	LOGD("bat_soc: %d, SoC: %.2f, TTE: %.0f, TTF: %.0f", bat_soc, soc, tte, ttf);
+#endif
 
 	return bat_soc;
 }
@@ -1158,10 +1062,6 @@ uint8_t nPM1300_GetSocStatus(void)
 void nPM1300_SetBatChargeConfig(void)
 {
 	nPM1300_WriteReg(REG_BCHGCONFIG, 0x00);//Disable charging if battery is warm. 0:enable 1:disable
-}
-
-void nPM1300_SetBatChargeInt(void)
-{
 }
 
 void nPM1300_SetNTCTypeSel(NPM1300_NTC_TYPE data)
@@ -1172,33 +1072,20 @@ void nPM1300_SetNTCTypeSel(NPM1300_NTC_TYPE data)
 	nPM1300_WriteReg(REG_ADCNTCRSEL, 0x00+data);
 }
 
-void nPM1300_SetNTCTempThreshold(NPM1300_NTC_TEMP status, int8_t temp)
-{
-	uint16_t ntc_temp;//ntc_temp = round(1024*Rt(Rt+Rb)), RtΪ���������Ӧ�¶ȵ���ֵ,RbΪ�ڲ������Ӧ�¶ȵ���ֵ
-	
-}
-
 void PPG_Power_On(void)
-{
-	
-}
+{}
 
 void PPG_Power_Off(void)
-{
-	
-}
+{}
 
 void Set_Screen_Backlight_Level(BACKLIGHT_LEVEL level)
-{
-}
+{}
 
 void Set_Screen_Backlight_On(void)
-{
-}
+{}
 
 void Set_Screen_Backlight_Off(void)
-{
-}
+{}
 
 void sys_pwr_off_timerout(struct k_timer *timer_id)
 {
@@ -1256,6 +1143,7 @@ void system_power_off(uint8_t flag)
 {
 	if(!sys_shutdown_is_running)
 	{
+		LOGD("begin");
 		sys_shutdown_is_running = true;
 		
 		SaveSystemDateTime();
@@ -1263,10 +1151,6 @@ void system_power_off(uint8_t flag)
 		{
 			SendPowerOffData(flag);
 		}
-
-		VibrateStart();
-		k_sleep(K_MSEC(100));
-		VibrateStop();
 
 		k_timer_start(&sys_pwroff, K_MSEC(5*1000), K_MSEC(5*1000));
 	}
@@ -1278,6 +1162,32 @@ void SystemShutDown(void)
 	LOGD("begin");
 #endif
 
+	nPM1300_WriteReg(REG_TASKENTERSHIPMODE, 0x01);
+}
+
+void pmu_charger_status_indicate(BAT_CHARGER_STATUS chg_status)
+{
+	BAT_CHARGER_STATUS status_bk = BAT_CHARGING_MAX;
+	
+	switch(chg_status)
+	{
+	case BAT_CHARGING_NO:
+		nPM1300_LEDConfig(LED_0, false);
+		nPM1300_LEDConfig(LED_1, false);
+		break;
+		
+	case BAT_CHARGING_PROGRESS:
+		nPM1300_LEDConfig(LED_0, true);
+		nPM1300_LEDConfig(LED_1, false);
+		break;
+		
+	case BAT_CHARGING_FINISHED:
+		nPM1300_LEDConfig(LED_0, false);
+		nPM1300_LEDConfig(LED_1, true);
+		break;
+	}
+
+	status_bk = chg_status;
 }
 
 void pmu_battery_low_shutdown_timerout(struct k_timer *timer_id)
@@ -1303,7 +1213,7 @@ void pmu_battery_update(void)
 	if(!pmu_check_ok)
 		return;
 
-	//g_bat_soc = MAX20353_CalculateSOC();
+	g_bat_soc = nPM1300_GetSocStatus();
 #ifdef PMU_DEBUG
 	LOGD("SOC:%d", g_bat_soc);
 #endif	
@@ -1313,16 +1223,10 @@ void pmu_battery_update(void)
 
 	if(charger_is_connected)
 	{
-		last_bat_soc = g_bat_soc;
 		g_bat_level = BAT_LEVEL_NORMAL;
 	}
 	else
 	{
-		if(g_bat_soc > last_bat_soc)
-			g_bat_soc = last_bat_soc;
-		else
-			last_bat_soc = g_bat_soc;
-
 		if(g_bat_soc < 4)
 		{
 			g_bat_level = BAT_LEVEL_VERY_LOW;
@@ -1350,136 +1254,44 @@ void pmu_battery_update(void)
 void pmu_status_update(void)
 {
 	uint8_t status0,status1;
-	static uint8_t charging_count = 0;
+	static BAT_CHARGER_STATUS chg_status_bk = BAT_CHARGING_MAX;
 
-	//nPM1300_GetBatStatus();
-	
-	//if(!pmu_check_ok)
+	if(!pmu_check_ok)
 		return;
 	
-	//nPM1300_ReadReg(REG_STATUS0, &status0);
-#ifdef PMU_DEBUG
-	LOGD("status0:%d", (status0&0x07));
-#endif	
-	switch((status0&0x07))
+	nPM1300_GetUSBStatus(&charger_is_connected);	
+	if(charger_is_connected)
 	{
-	case 0x00://Charger off
-	case 0x01://Charging suspended due to temperature (see battery charger state diagram)
-	case 0x07://Charger fault condition (see battery charger state diagram)
-		if(g_chg_status != BAT_CHARGING_NO)
-		{
-		#ifdef PMU_DEBUG
-			LOGD("BAT_CHARGING_NO");
-		#endif
-			g_chg_status = BAT_CHARGING_NO;
-		}
-		break;
+		nPM1300_GetChargeStatus(&g_chg_status);
 		
-	case 0x02://Pre-charge in progress
-	case 0x03://Fast-charge constant current mode in progress
-		if(g_chg_status != BAT_CHARGING_PROGRESS)
-		{
-		#ifdef PMU_DEBUG
-			LOGD("BAT_CHARGING_PROGRESS");
-		#endif
-			g_chg_status = BAT_CHARGING_PROGRESS;
-			charging_count = 0;
-		}
-		break;
-
-	case 0x04://Fast-charge constant voltage mode in progress
-	case 0x05://Maintain charge in progress
-		if(g_chg_status == BAT_CHARGING_PROGRESS)
-		{
-			if(g_bat_soc == 100)
-				charging_count++;
-			if(charging_count > 1)
-			{
-			#ifdef PMU_DEBUG
-				LOGD("change to finished!");
-			#endif
-				g_chg_status = BAT_CHARGING_FINISHED;
-			}
-		}
-		break;
-		
-	case 0x06://Maintain charger timer done
-		if(g_chg_status != BAT_CHARGING_FINISHED)
-		{
-		#ifdef PMU_DEBUG
-			LOGD("BAT_CHARGING_FINISHED");
-		#endif
-			g_chg_status = BAT_CHARGING_FINISHED;
-
-		#ifdef BATTERY_SOC_GAUGE	
-			//g_bat_soc = MAX20353_CalculateSOC();
-		#ifdef PMU_DEBUG
-			LOGD("g_bat_soc:%d", g_bat_soc);
-		#endif
-			if(g_bat_soc >= 95)
-				g_bat_soc = 100;
-
-			last_bat_soc = g_bat_soc;
-		#endif
-		}
-		break;
-	}
-	
-	//nPM1300_ReadReg(REG_STATUS1, &status1);
-#ifdef PMU_DEBUG
-	LOGD("status1:%d", (status1&0x08));
-#endif	
-	if((status1&0x08) == 0x08) //USB OK   
-	{
-		if(!charger_is_connected)
-		{
-		#ifdef PMU_DEBUG
-			LOGD("charger push in!");
-		#endif
-			charger_is_connected = true;
-			g_chg_status = BAT_CHARGING_PROGRESS;
-			pmu_battery_stop_shutdown();
-			//InitCharger();
-		}
-
 	#ifdef BATTERY_SOC_GAUGE	
-		//g_bat_soc = MAX20353_CalculateSOC();
-	#ifdef PMU_DEBUG
-		LOGD("soc:%d", g_bat_soc);
-	#endif
+		g_bat_soc = nPM1300_GetSocStatus();
 		if(g_bat_soc > 100)
 			g_bat_soc = 100;
 
-		if(g_bat_soc >= 95 && g_chg_status == BAT_CHARGING_FINISHED)
-			g_bat_soc = 100;
-		
-		last_bat_soc = g_bat_soc;
-		g_bat_level = BAT_LEVEL_NORMAL;
+		if(g_chg_status != BAT_CHARGING_PROGRESS)
+		{
+			if(g_bat_soc < 4)
+				g_bat_level = BAT_LEVEL_VERY_LOW;
+			else if(g_bat_soc < 7)
+				g_bat_level = BAT_LEVEL_LOW;
+			else if(g_bat_soc < 80)
+				g_bat_level = BAT_LEVEL_NORMAL;
+			else
+				g_bat_level = BAT_LEVEL_GOOD;
+		}
 	#endif
 	}
 	else
 	{			
-		if(charger_is_connected)
-		{
-		#ifdef PMU_DEBUG
-			LOGD("charger push out!");
-		#endif
-			charger_is_connected = false;
-			g_chg_status = BAT_CHARGING_NO;
-		}
+		charger_is_connected = false;
+		
+		g_chg_status = BAT_CHARGING_NO;
 		
 	#ifdef BATTERY_SOC_GAUGE	
-		//g_bat_soc = MAX20353_CalculateSOC();
-	#ifdef PMU_DEBUG
-		LOGD("soc:%d", g_bat_soc);
-	#endif
-		if(g_bat_soc > 100)
+		g_bat_soc = nPM1300_GetSocStatus();
+		if(g_bat_soc>100)
 			g_bat_soc = 100;
-
-		if(g_bat_soc > last_bat_soc)
-			g_bat_soc = last_bat_soc;
-		else
-			last_bat_soc = g_bat_soc;
 
 		if(g_bat_soc < 4)
 		{
@@ -1487,18 +1299,22 @@ void pmu_status_update(void)
 			pmu_battery_low_shutdown();
 		}
 		else if(g_bat_soc < 7)
-		{
 			g_bat_level = BAT_LEVEL_LOW;
-		}
 		else if(g_bat_soc < 80)
-		{
 			g_bat_level = BAT_LEVEL_NORMAL;
-		}
 		else
-		{
 			g_bat_level = BAT_LEVEL_GOOD;
-		}
 	#endif
+	}
+
+#ifdef PMU_DEBUG
+	LOGD("chg_bk:%d, chg:%d, soc:%d, bat_level:%d", chg_status_bk, g_chg_status, g_bat_soc, g_bat_level);
+#endif
+
+	if(chg_status_bk != g_chg_status)
+	{
+		chg_status_bk = g_chg_status;
+		pmu_charger_status_indicate(g_chg_status);
 	}
 }
 
@@ -1655,7 +1471,6 @@ bool pmu_interrupt_proc(void)
 		}
 
 		pmu_battery_stop_shutdown();
-
 	#ifdef CONFIG_FACTORY_TEST_SUPPORT
 		FTPMUStatusUpdate(2);
 	#endif	
@@ -1764,6 +1579,8 @@ bool pmu_interrupt_proc(void)
 			LOGD("Supplement Mode Active.");
 			g_chg_status = BAT_CHARGING_PROGRESS;
 		}
+
+		pmu_charger_status_indicate(g_chg_status);
 	}
 	else
 	{
@@ -1771,6 +1588,7 @@ bool pmu_interrupt_proc(void)
 		LOGD("it is not charging!");
 	#endif
 		g_chg_status = BAT_CHARGING_NO;
+		pmu_charger_status_indicate(g_chg_status);
 	}
 
 	//ISetMsb = floor(Ichg(mA)/4), ISetLsb = (Ichg(mA)%2 == 1 ? 1 : 0), from 32 mA to 800 mA, in 2 mA steps
@@ -1911,40 +1729,15 @@ void PmuAlertHandle(void)
 
 void nPM1300_InitData(void)
 {
-	uint8_t status0,status1;
-	
-	//nPM1300_ReadReg(REG_STATUS0, &status0);
-	switch((status0&0x07))
+	nPM1300_GetUSBStatus(&charger_is_connected);
+	if(charger_is_connected)
 	{
-	case 0x00://Charger off
-	case 0x01://Charging suspended due to temperature (see battery charger state diagram)
-	case 0x07://Charger fault condition (see battery charger state diagram)
-		g_chg_status = BAT_CHARGING_NO;
-		break;
+		nPM1300_GetChargeStatus(&g_chg_status);
 		
-	case 0x02://Pre-charge in progress
-	case 0x03://Fast-charge constant current mode in progress
-	case 0x04://Fast-charge constant voltage mode in progress
-	case 0x05://Maintain charge in progress
-		g_chg_status = BAT_CHARGING_PROGRESS;
-		break;
-		
-	case 0x06://Maintain charger timer done
-		g_chg_status = BAT_CHARGING_FINISHED;
-		break;
-	}
-	
-	//nPM1300_ReadReg(REG_STATUS1, &status1);
-	if((status1&0x08) == 0x08) //USB OK   
-	{
-		charger_is_connected = true;
-		
-		//InitCharger();
 	#ifdef BATTERY_SOC_GAUGE	
-		//g_bat_soc = MAX20353_CalculateSOC();
-		if(g_bat_soc>100)
+		g_bat_soc = nPM1300_GetSocStatus();
+		if(g_bat_soc > 100)
 			g_bat_soc = 100;
-		last_bat_soc = g_bat_soc;
 
 		if(g_chg_status != BAT_CHARGING_PROGRESS)
 		{
@@ -1974,10 +1767,9 @@ void nPM1300_InitData(void)
 		g_chg_status = BAT_CHARGING_NO;
 		
 	#ifdef BATTERY_SOC_GAUGE	
-		//g_bat_soc = MAX20353_CalculateSOC();
+		g_bat_soc = nPM1300_GetSocStatus();
 		if(g_bat_soc>100)
 			g_bat_soc = 100;
-		last_bat_soc = g_bat_soc;
 
 		if(g_bat_soc < 4)
 		{
@@ -1999,6 +1791,12 @@ void nPM1300_InitData(void)
 	#endif
 	}
 
+	pmu_charger_status_indicate(g_chg_status);
+	
+#ifdef PMU_DEBUG
+	LOGD("usb:%d, chg:%d, soc:%d", charger_is_connected, g_chg_status, g_bat_soc);
+#endif
+
 	if(!charger_is_connected && g_bat_soc == 0)
 	{
 	#ifdef PMU_DEBUG
@@ -2010,14 +1808,10 @@ void nPM1300_InitData(void)
 
 void nPM1300_PowerSupply(void)
 {
-	nPM1300_Buck1Disable();
-	nPM1300_Buck1Config();
-	nPM1300_Buck2Disable();
-	nPM1300_Buck2Config();
-	nPM1300_LDO1Disable();
-	nPM1300_LDO1Config();
-	nPM1300_LDO2Disable();
-	nPM1300_LDO2Config();
+	nPM1300_Buck1Config();	//1.8v
+	nPM1300_Buck2Config();	//3.3v
+	nPM1300_LDO1Config();	//3.0v
+	nPM1300_LDO2Config();	//1.8v
 
 	//LED����
 	nPM1300_LEDConfig(LED_0, true);
@@ -2046,8 +1840,6 @@ void nPM1300_SOCInit(void)
 	nrf_fuel_gauge_init(&parameters, NULL);
 
 	ref_time = k_uptime_get();
-
-	test_soc();
 }
 
 int nPM1300_ChargerInit(void)
@@ -2241,11 +2033,7 @@ void pmu_init(void)
 	if(!pmu_check_ok)
 		return;
 	
-	//nPM1300_InitData();
-
-	//VibrateStart();
-	//k_sleep(K_MSEC(100));
-	//VibrateStop();
+	nPM1300_InitData();
 
 #ifdef PMU_DEBUG
 	LOGD("pmu_init done!");
@@ -2320,15 +2108,6 @@ void test_soc(void)
 }
 #endif/*BATTERY_SOC_GAUGE*/
 
-#ifdef BATTERY_NTC_CHECK
-void PMUUpdateTempForSOC(void)
-{
-	nPM1300_UpdateTemp();
-	nPM1300_GetUSBStatus();
-	nPM1300_GetBatStatus();
-}
-#endif
-
 void GetBatterySocString(uint8_t *str_utc)
 {
 	if(str_utc == NULL)
@@ -2372,12 +2151,14 @@ void PMUMsgProcess(void)
 	
 	if(key_pwroff_flag)
 	{
+		LOGD("key_pwroff_flag");
 		system_power_off(2);
 		key_pwroff_flag = false;
 	}
 	
 	if(sys_pwr_off_flag)
 	{
+		LOGD("pmu_check_ok:%d", pmu_check_ok);
 		if(pmu_check_ok)
 			SystemShutDown();
 		
@@ -2431,15 +2212,6 @@ void PMUMsgProcess(void)
 			test_soc_status();
 		
 		read_soc_status = false;
-	}
-#endif
-
-#ifdef BATTERY_NTC_CHECK
-	if(pmu_check_temp_flag)
-	{
-		LOGD("pmu_check_temp_flag!");
-		PMUUpdateTempForSOC();
-		pmu_check_temp_flag = false;
 	}
 #endif
 }
