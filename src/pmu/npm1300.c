@@ -1152,7 +1152,7 @@ void system_power_off(uint8_t flag)
 			SendPowerOffData(flag);
 		}
 
-		k_timer_start(&sys_pwroff, K_MSEC(5*1000), K_MSEC(5*1000));
+		k_timer_start(&sys_pwroff, K_MSEC(5*1000), K_NO_WAIT);
 	}
 }
 
