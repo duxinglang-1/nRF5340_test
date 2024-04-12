@@ -24,10 +24,10 @@
 
 //#define UART_DEBUG
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(uart2), okay)
-#define BLE_DEV DT_NODELABEL(uart2)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay)
+#define BLE_DEV DT_NODELABEL(uart0)
 #else
-#error "uart2 devicetree node is disabled"
+#error "uart0 devicetree node is disabled"
 #define BLE_DEV	""
 #endif
 

@@ -50,6 +50,9 @@ void system_init(void)
 #ifdef CONFIG_PPG_SUPPORT	
 	//PPG_init();
 #endif
+#ifdef CONFIG_ECG_SUPPORT
+	ECG_init();
+#endif
 	//ble_init();
 	//LogInit();
 }
@@ -114,6 +117,9 @@ int main(void)
 		PMUMsgProcess();
 	#ifdef CONFIG_PPG_SUPPORT	
 		PPGMsgProcess();
+	#endif
+	#ifdef CONFIG_ECG_SUPPORT
+		ECGMsgProcess();
 	#endif
 		SettingsMsgPorcess();
 		UartMsgProc();

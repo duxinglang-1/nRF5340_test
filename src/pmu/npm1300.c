@@ -28,7 +28,7 @@ static const struct battery_model battery_model = {
 #ifdef PMU_SENSOR_NPM1300
 
 //#define SHOW_LOG_IN_SCREEN
-#define PMU_DEBUG
+//#define PMU_DEBUG
 
 #ifdef GPIO_ACT_I2C
 #define PMU_SCL		0
@@ -708,7 +708,9 @@ uint16_t nPM1300_GetNTCTemp(void)
 	ntc_temp |= ((data>>2)&0x03);
 	die_temp |= ((data>>4)&0x03);
 
+#ifdef PMU_DEBUG
 	LOGD("ntc_t:%d, die_t:%d", ntc_temp, die_temp);
+#endif
 	return ntc_temp;
 }
 
@@ -732,7 +734,9 @@ uint16_t nPM1300_GetDieTemp(void)
 	//D VSYS measurement result LSBs
 	die_temp |= (data&0x30);
 
+#ifdef PMU_DEBUG
 	LOGD("die_t:%d", die_temp);
+#endif
 	return die_temp;
 }
 
@@ -827,46 +831,72 @@ void nPM1300_GetNTCStatus(void)
 	switch(data[0]&0x03)
 	{
 	case 0://No thermistor
+	#ifdef PMU_DEBUG
 		LOGD("No thermistor");
+	#endif
 		break;
 	case 1://NTC10K
+	#ifdef PMU_DEBUG
 		LOGD("NTC10K");
+	#endif
 		break;
 	case 2://NTC47K
+	#ifdef PMU_DEBUG
 		LOGD("NTC47K");
+	#endif
 		break;
 	case 3://NTC100K
+	#ifdef PMU_DEBUG
 		LOGD("NTC100K");
+	#endif
 		break;
 	}
 
 	nPM1300_ReadRegMulti(REG_NTCCOLD, &data, 2);
+#ifdef PMU_DEBUG
 	LOGD("NTCCOLD:%X %X, temp:%d", data[0], data[1], 0);
+#endif
 	nPM1300_ReadRegMulti(REG_NTCCOOL, &data, 2);
+#ifdef PMU_DEBUG
 	LOGD("NTCCOOL:%X %X, temp:%d", data[0], data[1], 0);
+#endif
 	nPM1300_ReadRegMulti(REG_NTCWARM, &data, 2);
+#ifdef PMU_DEBUG
 	LOGD("NTCWARM:%X %X, temp:%d", data[0], data[1], 0);
+#endif
 	nPM1300_ReadRegMulti(REG_NTCHOT, &data, 2);
+#ifdef PMU_DEBUG
 	LOGD("NTCHOT:%X %X, temp:%d", data[0], data[1], 0);
+#endif
 	
 	
 	nPM1300_ReadReg(REG_NTCSTATUS, &data[0]);	//0b D C B A, A NTCCOLD, B NTCCOOL, C NTCWARM, D NTCHOT
 	switch(data[0]&0x0f)
 	{
 	case 0:
-		LOGD("NTC_NORMAL");
+	#ifdef PMU_DEBUG
+		LOGD("NTC_NO-RMAL");
+	#endif
 		break;
 	case 1:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_COLD");
+	#endif
 		break;
 	case 2:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_COOL");
+	#endif
 		break;
 	case 4:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_WARM");
+	#endif
 		break;
 	case 8:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_HOT");
+	#endif
 		break;
 	}
 		
@@ -874,10 +904,14 @@ void nPM1300_GetNTCStatus(void)
 	switch(data[0]&0x01)
 	{
 	case 0:
+	#ifdef PMU_DEBUG
 		LOGD("Die below high threshold");
+	#endif
 		break;
 	case 1:
+	#ifdef PMU_DEBUG
 		LOGD("Die above high threshold");
+	#endif
 		break;
 	}
 }
@@ -949,7 +983,9 @@ void nPM1300_GetChargeStatus(BAT_CHARGER_STATUS *status)
 	uint8_t data;
 	
 	nPM1300_ReadReg(REG_BCHGCHARGESTATUS, &data);
+#ifdef PMU_DEBUG
 	LOGD("BCHGCHARGESTATUS:%0X", data);
+#endif
 	if(data != 0x00)
 	{
 	#ifdef PMU_DEBUG
@@ -1023,7 +1059,9 @@ void nPM1300_GetBatStatus(void)
 	float voltage, current, temp;
 	
 	nPM1300_ReadData(&voltage, &current, &temp);
+#ifdef PMU_DEBUG
 	LOGD("vol:%f, current:%f, temp:%f", voltage, current, temp);
+#endif
 }
 
 uint8_t nPM1300_GetSocStatus(void)
@@ -1143,7 +1181,9 @@ void system_power_off(uint8_t flag)
 {
 	if(!sys_shutdown_is_running)
 	{
+	#ifdef PMU_DEBUG
 		LOGD("begin");
+	#endif
 		sys_shutdown_is_running = true;
 		
 		SaveSystemDateTime();
@@ -1326,96 +1366,216 @@ bool pmu_interrupt_proc(void)
 	Delay_ms(10);
 			
 	nPM1300_ReadReg(REG_EVENTSBCHARGER0SET, &data[0]);
+#ifdef PMU_DEBUG
 	LOGD("EVENTSBCHARGER0SET:%0X", data[0]);
+#endif
 	if(data[0] != 0x00)
 	{
 		nPM1300_WriteReg(REG_EVENTSBCHARGER0CLR, data[0]);
 		if((data[0]&0x01) == 0x01)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Cold Battery detected from NTC measure.");
+		#endif
+		}
 		if((data[0]&0x02) == 0x02)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Cool Battery detected from NTC measure.");
+		#endif
+		}
 		if((data[0]&0x04) == 0x04)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Warm Battery detected from NTC measure.");
+		#endif
+		}
 		if((data[0]&0x08) == 0x08)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Hot Battery detected from NTC measure.");
+		#endif
+		}
 		if((data[0]&0x10) == 0x10)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("die high temperature detected from Die Temp measure.");
+		#endif
+		}
 		if((data[0]&0x20) == 0x20)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("die resume temperature detected from Die Temp measure.");
+		#endif
+		}
 	}
 	
 	nPM1300_ReadReg(REG_EVENTSBCHARGER1SET, &data[0]);
+#ifdef PMU_DEBUG
 	LOGD("EVENTSBCHARGER1SET:%0X", data[0]);
+#endif
 	if(data[0] != 0x00)
 	{
 		nPM1300_WriteReg(REG_EVENTSBCHARGER1CLR, data[0]);
 		if((data[0]&0x01) == 0x01)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("supplement mode activated.");
+		#endif
+		}
 		if((data[0]&0x02) == 0x02)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Trickle Charge started.");
+		#endif
+		}
 		if((data[0]&0x04) == 0x04)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Constant Current charging started.");
+		#endif
+		}
 		if((data[0]&0x08) == 0x08)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Constant Voltage charging started.");
+		#endif
+		}
 		if((data[0]&0x10) == 0x10)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("charging completed (Battery Full).");
+		#endif
+		}
 		if((data[0]&0x20) == 0x20)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("charging error.");
+		#endif
+		}
 	}
 	
 	nPM1300_ReadReg(REG_EVENTSBCHARGER2SET, &data[0]);
+#ifdef PMU_DEBUG
 	LOGD("EVENTSBCHARGER2SET:%0X", data[0]);
+#endif
 	if(data[0] != 0x00)
 	{
 		nPM1300_WriteReg(REG_EVENTSBCHARGER2CLR, data[0]);
 		if((data[0]&0x01) == 0x01)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Battery Detected.");
+		#endif
+		}
 		if((data[0]&0x02) == 0x02)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Battery Lost.");
+		#endif
+		}
 		if((data[0]&0x04) == 0x04)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Battery re-charge needed.");
+		#endif
+		}
 	}
 	
 	nPM1300_ReadReg(REG_EVENTSVBUSIN0SET, &data[0]);
+#ifdef PMU_DEBUG
 	LOGD("EVENTSVBUSIN0SET:%0X", data[0]);
+#endif
 	if(data[0] != 0x00)
 	{
 		nPM1300_WriteReg(REG_EVENTSVBUSIN0CLR, data[0]);
 		if((data[0]&0x01) == 0x01)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("VBUS input detected.");
+		#endif
+		}
 		if((data[0]&0x02) == 0x02)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("VBUS input removed.");
+		#endif
+		}
 		if((data[0]&0x04) == 0x04)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("VBUS Over Voltage Detected.");
+		#endif
+		}
 		if((data[0]&0x08) == 0x08)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("VBUS Over Removed.");
+		#endif
+		}
 		if((data[0]&0x10) == 0x10)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("VBUS Under Voltage Detected.");
+		#endif
+		}
 		if((data[0]&0x20) == 0x20)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("VBUS Under Removed.");
+		#endif
+		}
 	}
 
 	nPM1300_ReadReg(REG_EVENTSVBUSIN1SET, &data[0]);
+#ifdef PMU_DEBUG
 	LOGD("EVENTSVBUSIN1SET:%0X", data[0]);
+#endif
 	if(data[0] != 0x00)
 	{
 		nPM1300_WriteReg(REG_EVENTSVBUSIN1CLR, data[0]);
 		if((data[0]&0x01) == 0x01)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Thermal Warning detected.");
+		#endif
+		}
 		if((data[0]&0x02) == 0x02)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Thermal Warning removed.");
+		#endif
+		}
 		if((data[0]&0x04) == 0x04)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Thermal Shutown detected.");
+		#endif
+		}		
 		if((data[0]&0x08) == 0x08)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("Thermal Shutdown removed.");
+		#endif
+		}
 		if((data[0]&0x10) == 0x10)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("when Voltage on CC1 changes.");
+		#endif
+		}
 		if((data[0]&0x20) == 0x20)
+		{
+		#ifdef PMU_DEBUG
 			LOGD("when Voltage on CC2 changes.");
+		#endif
+		}
 	}
 
 	nPM1300_ReadReg(REG_USBCDETECTSTATUS, &data[0]);
+#ifdef PMU_DEBUG
 	LOGD("USBCDETECTSTATUS:%0X", data[0]);
+#endif
 	if(data[0] != 0x00)
 	{
 	#ifdef PMU_DEBUG
@@ -1516,24 +1676,36 @@ bool pmu_interrupt_proc(void)
 	switch(data[0]&0x0f)
 	{
 	case 0:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_NORMAL");
+	#endif
 		break;
 	case 1:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_COLD");
+	#endif
 		break;
 	case 2:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_COOL");
+	#endif
 		break;
 	case 4:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_WARM");
+	#endif
 		break;
 	case 8:
+	#ifdef PMU_DEBUG
 		LOGD("NTC_HOT");
+	#endif
 		break;
 	}
 	
 	nPM1300_ReadReg(REG_BCHGCHARGESTATUS, &data[0]);
+#ifdef PMU_DEBUG
 	LOGD("BCHGCHARGESTATUS:%0X", data[0]);
+#endif
 	if(data[0] != 0x00)
 	{
 	#ifdef PMU_DEBUG
@@ -1541,42 +1713,58 @@ bool pmu_interrupt_proc(void)
 	#endif
 		if((data[0]&0x01) == 0x01)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Battery is connected.");
+		#endif
 			g_chg_status = BAT_CHARGING_NO;
 		}
 		if((data[0]&0x02) == 0x02)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Charging completed (Battery Full).");
+		#endif
 			g_chg_status = BAT_CHARGING_FINISHED;
 		}
 		if((data[0]&0x04) == 0x04)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Trickle charge.");
+		#endif
 			g_chg_status = BAT_CHARGING_PROGRESS;
 		}
 		if((data[0]&0x08) == 0x08)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Constant Current charging.");
+		#endif
 			g_chg_status = BAT_CHARGING_PROGRESS;
 		}
 		if((data[0]&0x10) == 0x10)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Constant Voltage charging.");
+		#endif
 			g_chg_status = BAT_CHARGING_PROGRESS;
 		}
 		if((data[0]&0x20) == 0x20)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Battery re-charge is needed.");
+		#endif
 			g_chg_status = BAT_CHARGING_PROGRESS;
 		}
 		if((data[0]&0x40) == 0x20)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Charging stopped due Die Temp high.");
+		#endif
 			g_chg_status = BAT_CHARGING_NO;
 		}
 		if((data[0]&0x80) == 0x20)
 		{
+		#ifdef PMU_DEBUG
 			LOGD("Supplement Mode Active.");
+		#endif
 			g_chg_status = BAT_CHARGING_PROGRESS;
 		}
 
@@ -1593,16 +1781,21 @@ bool pmu_interrupt_proc(void)
 
 	//ISetMsb = floor(Ichg(mA)/4), ISetLsb = (Ichg(mA)%2 == 1 ? 1 : 0), from 32 mA to 800 mA, in 2 mA steps
 	nPM1300_ReadRegMulti(REG_BCHGISETMSB, &data, 2);
+#ifdef PMU_DEBUG
 	LOGD("BCHGISETMSB:%0X %0X, Ichg=%dmA", data[0],data[1], 4*data[0]+2*(data[1]%2));
-	
+#endif	
 	nPM1300_ReadReg(REG_BCHGITERMSEL, &data[0]);
 	switch(data[0])
 	{
 	case 0:
+	#ifdef PMU_DEBUG	
 		LOGD("10%(default)");
+	#endif
 		break;
 	case 1:
+	#ifdef PMU_DEBUG
 		LOGD("20%(default)");
+	#endif
 		break;
 	}
 
@@ -2151,14 +2344,18 @@ void PMUMsgProcess(void)
 	
 	if(key_pwroff_flag)
 	{
+	#ifdef PMU_DEBUG
 		LOGD("key_pwroff_flag");
+	#endif
 		system_power_off(2);
 		key_pwroff_flag = false;
 	}
 	
 	if(sys_pwr_off_flag)
 	{
+	#ifdef PMU_DEBUG
 		LOGD("pmu_check_ok:%d", pmu_check_ok);
+	#endif
 		if(pmu_check_ok)
 			SystemShutDown();
 		
