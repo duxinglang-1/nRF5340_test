@@ -129,12 +129,48 @@ void ads_data_read(ADS_DATA_COMMAND data_command, uint8_t *rxbuf, uint32_t len)
 	ECG_CS_HIGH();
 }
 
-void ads_reg_write(uint8_t addr, uint8_t *write_buf, uint32_t write_len)
+void ads_reg_write(ADS_RED_ADDR addr, uint8_t data)
 {
 	int err;
-	
+
+	switch(addr)
+  	{
+	case ADS_REG_CFG1://This register configures each ADC channel sample rate.
+		data = data&0x87;
+		break;
+	case ADS_REG_CFG2://This register configures the test signal, clock, reference, and LOFF buffer.
+		data = data&0xFB;
+		data |= 0x80;
+		break;
+	case ADS_REG_LOFF://This register configures the lead-off detection operation.
+		data = data&0xFD;
+		data |= 0x10;
+		break;
+	case ADS_REG_CH1SET://This register configures the power mode, PGA gain, and multiplexer settings channels(PD1).
+	case ADS_REG_CH2SET://This register configures the power mode, PGA gain, and multiplexer settings channels(PD2).
+	case ADS_REG_RLD_SENS://This register controls the selection of the positive and negative signals from each channel for right leg drive derivation.
+		break;
+	case ADS_REG_LOFF_SENS://This register selects the positive and negative side from each channel for lead-off detection.
+		data = data&0x3F;
+		break;
+	case ADS_REG_LOFF_STAT://This register stores the status of whether the positive or negative electrode on each channel is on or off.
+		data = data&0x5F;
+		break;
+	case ADS_REG_RESP1://This register controls the respiration functionality. This register applies to the ADS1292R version only.
+		data |= 0x02;
+		break;
+	case ADS_REG_RESP2://This register controls the respiration and calibration functionality.
+		data = data&0x87;
+		data |= 0x01;
+		break;
+	case ADS_REG_GPIO://This register controls the GPIO pins.
+		data = data&0x0F;
+		break;
+	default:
+		break;
+  	}
 	spi_tx_buf[0] = ADS_RED_COM_WREG|(addr&0x1f);
-	spi_tx_buf[1] = 0x00|(write_len-1);
+	spi_tx_buf[1] = 0x00;
 
 	tx_buff.buf = spi_tx_buf;
 	tx_buff.len = 2;
@@ -151,8 +187,8 @@ void ads_reg_write(uint8_t addr, uint8_t *write_buf, uint32_t write_len)
 	#endif
 	}
 
-	tx_buff.buf = write_buf;
-	tx_buff.len = write_len;
+	tx_buff.buf = &data;
+	tx_buff.len = 1;
 	tx_bufs.buffers = &tx_buff;
 	tx_bufs.count = 1;
 
@@ -167,12 +203,12 @@ void ads_reg_write(uint8_t addr, uint8_t *write_buf, uint32_t write_len)
 	ECG_CS_HIGH();
 }
 
-void ads_reg_read(uint8_t addr, uint8_t *read_buf, uint32_t read_len)
+void ads_reg_read(ADS_RED_ADDR addr, uint8_t *data)
 {
 	int err;
 	
 	spi_tx_buf[0] = ADS_REG_COM_RREG|(addr&0x1f);
-	spi_tx_buf[1] = 0x00|(read_len-1);
+	spi_tx_buf[1] = 0x00;
 
 	tx_buff.buf = spi_tx_buf;
 	tx_buff.len = 2;
@@ -189,8 +225,8 @@ void ads_reg_read(uint8_t addr, uint8_t *read_buf, uint32_t read_len)
 	#endif
 	}
 
-	rx_buff.buf = read_buf;
-	rx_buff.len = read_len;
+	rx_buff.buf = data;
+	rx_buff.len = 1;
 	rx_bufs.buffers = &rx_buff;
 	rx_bufs.count = 1;
 
@@ -228,7 +264,7 @@ void ads1292_sensor_init(void)
 	ads_data_write(ADS_DATA_COM_SDATAC);
 	ads_sys_set(ADS_SYS_COM_STOP);
 	
-	ads_reg_read(ADS_REG_ID, &device_id, 1);
+	ads_reg_read(ADS_REG_ID, &device_id);
 	LOGD("id:%x", device_id);
 	switch((device_id&0xE0)>>5)
 	{
@@ -272,6 +308,14 @@ void ads1292_sensor_init(void)
 	case 0b11:
 		LOGD("ADS1292 and ADS1292R");
 		break;
+	}
+
+	for(uint8_t i=ADS_REG_CFG1;i<=ADS_REG_GPIO;i++)
+	{
+		uint8_t data;
+
+		ads_reg_read(i, &data);
+		LOGD("reg_%d:%x", i, data);
 	}
 }
 
