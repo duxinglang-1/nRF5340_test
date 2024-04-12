@@ -289,7 +289,7 @@ void ads1292_init(void)
 
 	gpio_pin_configure(gpio_ecg, ECG_RESET_PIN, GPIO_OUTPUT);
 	gpio_pin_set(gpio_ecg, ECG_RESET_PIN, 0);
-	k_sleep(K_MSEC(2000));
+	k_sleep(K_MSEC(50));
 	gpio_pin_set(gpio_ecg, ECG_RESET_PIN, 1);
 	gpio_pin_configure(gpio_ecg, ECG_START_PIN, GPIO_OUTPUT);
 	gpio_pin_configure(gpio_ecg, ECG_CS_PIN, GPIO_OUTPUT);
