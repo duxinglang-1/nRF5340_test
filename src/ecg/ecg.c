@@ -18,13 +18,13 @@
 void ECG_init(void)
 {
 #ifdef ECG_ADS1292
-	ads1292_init();
+	ADS1x9x_Init();
 #endif
 }
 
 void ECGMsgProcess(void)
 {
 #ifdef ECG_ADS1292
-	asd1292_msg_process();
+	ADS1x9x_Msg_Process();
 #endif
 }

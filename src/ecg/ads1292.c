@@ -28,6 +28,103 @@ static uint8_t spi_rx_buf[8] = {0};
 
 static bool ecg_trige_flag = false;
 
+uint8_t ADC_Read_data[16] = {0};
+uint8_t ADS129x_SPI_cmd_Flag=0, ADS129x_SPI_data_Flag=0,  SPI_Send_count=0, SPI_Tx_Count = 0;
+uint8_t SPI_Rx_Data_Flag = 0,  SPI_Rx_Count=0, SPI_Rx_exp_Count=0 ;
+uint8_t SPI_Tx_buf[10] = {0};
+uint8_t SPI_Rx_buf[12] = {0};
+uint8_t ECGRecorder_data_Buf[80] = {0};
+uint8_t Recorder_head;
+uint8_t Recorder_tail;
+
+long ADS1x9x_ECG_Data_buf[6] = {0};
+
+ADS1x9x_state_t ECG_Recoder_state = {0};
+
+uint8_t ADS1x9xRegVal[ADS_REG_MAX] = 
+{
+	//Device ID read Ony
+	0x00,
+	//CONFIG1
+	0x02,
+	//CONFIG2
+	0xE0,
+	//LOFF
+	0xF0,
+	//CH1SET (PGA gain = 6)
+	0x00,
+	//CH2SET (PGA gain = 6)
+	0x00,
+	//RLD_SENS (default)
+	0x2C,
+	//LOFF_SENS (default)
+	0x0F,    
+	//LOFF_STAT
+	0x00,
+	//RESP1
+	0xEA,
+	//RESP2
+	0x03,
+	//GPIO
+	0x0C 
+};		
+
+uint8_t ADS1x9xR_Default_Reg_Settings[ADS_REG_MAX] = 
+{
+	//Device ID read Ony
+	0x00,
+	//CONFIG1
+	0x02,
+	//CONFIG2
+	0xE0,
+	//LOFF
+	0xF0,
+	//CH1SET (PGA gain = 6)
+	0x00,
+	//CH2SET (PGA gain = 6)
+	0x00,
+	//RLD_SENS (default)
+	0x2C,
+	//LOFF_SENS (default)
+	0x0F,    
+	//LOFF_STAT
+	0x00,
+	//RESP1
+	0xEA,
+	//RESP2
+	0x03,
+	//GPIO
+	0x0C 
+};		
+
+uint8_t ADS1x9x_Default_Reg_Settings[ADS_REG_MAX] = 
+{
+	//Device ID read Ony
+	0x00,
+	//CONFIG1
+	0x02,
+	//CONFIG2
+	0xE0,
+	//LOFF
+	0xF0,
+	//CH1SET (PGA gain = 6)
+	0x00,
+	//CH2SET (PGA gain = 6)
+	0x00,
+	//RLD_SENS (default)
+	0x2C,
+	//LOFF_SENS (default)
+	0x0F,    
+	//LOFF_STAT
+	0x00,
+	//RESP1
+	0x02,
+	//RESP2
+	0x03,
+	//GPIO
+	0x0C 
+};		
+
 void EcgInterruptHandle(void)
 {
 	ecg_trige_flag = true;
@@ -43,7 +140,40 @@ void ECG_CS_HIGH(void)
 	gpio_pin_set(gpio_ecg, ECG_CS_PIN, 1);
 }
 
-void ads_sys_set(ADS_SYS_COMMAND sys_command)
+void ECG_START_LOW(void)
+{
+	gpio_pin_set(gpio_ecg, ECG_START_PIN, 0);
+}
+
+void ECG_START_HIGH(void)
+{
+	gpio_pin_set(gpio_ecg, ECG_START_PIN, 1);
+}
+
+void ECG_RESET_LOW(void)
+{
+	gpio_pin_set(gpio_ecg, ECG_RESET_PIN, 0);
+}
+
+void ECG_RESET_HIGH(void)
+{
+	gpio_pin_set(gpio_ecg, ECG_RESET_PIN, 1);
+}
+
+void ECG_SPI_Init(void)
+{
+	spi_ecg = DEVICE_DT_GET(ECG_DEVICE);
+	if(!spi_ecg) 
+	{
+		return;
+	}
+
+	spi_cfg.operation = SPI_OP_MODE_MASTER | SPI_MODE_CPHA | SPI_WORD_SET(8);
+	spi_cfg.frequency = 1000000;
+	spi_cfg.slave = 0;
+}
+
+void ADS_Sys_Set(ADS_SYS_COMMAND sys_command)
 {
 	int err;
 	
@@ -67,7 +197,7 @@ void ads_sys_set(ADS_SYS_COMMAND sys_command)
 	ECG_CS_HIGH();
 }
 
-void ads_data_write(ADS_DATA_COMMAND data_command)
+void ADS_Data_Write(ADS_DATA_COMMAND data_command)
 {
 	int err;
 		
@@ -89,10 +219,9 @@ void ads_data_write(ADS_DATA_COMMAND data_command)
 	}
 
 	ECG_CS_HIGH();
-
 }
 
-void ads_data_read(ADS_DATA_COMMAND data_command, uint8_t *rxbuf, uint32_t len)
+void ADS_Data_Read(ADS_DATA_COMMAND data_command, uint8_t *rxbuf, uint32_t len)
 {
 	int err;
 	
@@ -129,7 +258,7 @@ void ads_data_read(ADS_DATA_COMMAND data_command, uint8_t *rxbuf, uint32_t len)
 	ECG_CS_HIGH();
 }
 
-void ads_reg_write(ADS_RED_ADDR addr, uint8_t data)
+void ADS_Reg_Write(ADS_RED_ADDR addr, uint8_t data)
 {
 	int err;
 
@@ -169,6 +298,7 @@ void ads_reg_write(ADS_RED_ADDR addr, uint8_t data)
 	default:
 		break;
   	}
+	
 	spi_tx_buf[0] = ADS_RED_COM_WREG|(addr&0x1f);
 	spi_tx_buf[1] = 0x00;
 
@@ -203,7 +333,7 @@ void ads_reg_write(ADS_RED_ADDR addr, uint8_t data)
 	ECG_CS_HIGH();
 }
 
-void ads_reg_read(ADS_RED_ADDR addr, uint8_t *data)
+void ADS_Reg_Read(ADS_RED_ADDR addr, uint8_t *data)
 {
 	int err;
 	
@@ -241,85 +371,431 @@ void ads_reg_read(ADS_RED_ADDR addr, uint8_t *data)
 	ECG_CS_HIGH();
 }
 
-void ECG_SPI_Init(void)
+void ADS1x9x_Reset(void)
 {
-	spi_ecg = DEVICE_DT_GET(ECG_DEVICE);
-	if(!spi_ecg) 
-	{
-	#ifdef FLASH_DEBUG
-		LOGD("Could not get %s device", ECG_DEVICE);
-	#endif
-		return;
-	}
-
-	spi_cfg.operation = SPI_OP_MODE_MASTER | SPI_MODE_CPHA | SPI_WORD_SET(8);
-	spi_cfg.frequency = 1000000;
-	spi_cfg.slave = 0;
+	ECG_RESET_HIGH();
+	k_sleep(K_MSEC(50));
+	ECG_RESET_LOW();
+	k_sleep(K_MSEC(50));
+	ECG_RESET_HIGH();
+	k_sleep(K_MSEC(50));
+}
+  
+void ADS1x9x_Disable_Start(void)
+{
+	ECG_START_LOW();
+    k_sleep(K_MSEC(50));
 }
 
-void ads1292_sensor_init(void)
+void ADS1x9x_Enable_Start(void)
+{
+	ECG_START_HIGH();
+    k_sleep(K_MSEC(50));
+}
+
+void ADS1x9x_PowerDown_Enable(void)
+{
+	ECG_RESET_LOW();
+    k_sleep(K_MSEC(50));
+}
+
+void ADS1x9x_PowerDown_Disable(void)
+{
+	ECG_RESET_HIGH();
+    k_sleep(K_MSEC(50));
+}
+
+void Soft_Start_ReStart_ADS1x9x (void)
+{
+	ADS_Sys_Set(ADS_SYS_COM_START);
+    ECG_CS_HIGH();                                                      
+}
+
+void Hard_Start_ReStart_ADS1x9x(void)
+{
+	ECG_START_HIGH();	// Set Start pin to High
+}
+
+void Soft_Start_ADS1x9x (void)
+{
+    ADS_Sys_Set(ADS_SYS_COM_START);	// Send 0x08 to the ADS1x9x
+}
+
+void Soft_Stop_ADS1x9x (void)
+{
+    ADS_Sys_Set(ADS_SYS_COM_STOP);	// Send 0x0A to the ADS1x9x
+}
+
+void Hard_Stop_ADS1x9x (void)
+{
+  	ECG_START_LOW();	// Set Start pin to Low
+   	k_sleep(K_MSEC(50));
+}
+
+void Stop_Read_Data_Continuous (void)
+{
+	ADS_Data_Write(ADS_DATA_COM_SDATAC);	// Send 0x11 to the ADS1x9x
+}
+
+void Start_Read_Data_Continuous (void)
+{
+    ADS_Data_Write(ADS_DATA_COM_RDATAC);	// Send 0x10 to the ADS1x9x
+}
+
+void Start_Data_Conv_Command (void)
+{
+    ADS_Sys_Set(ADS_SYS_COM_START);			// Send 0x08 to the ADS1x9x
+}
+
+void ADS1191_Parse_Data_Packet(void)
+{
+	uint8_t ECG_Chan_num;
+
+	switch(ECG_Recoder_state.state)
+	{
+	case ECG_STATE_IDLE:
+		break;
+
+	case ECG_STATE_DATA_STREAMING:
+		for(ECG_Chan_num=0;ECG_Chan_num<2;ECG_Chan_num++)
+		{
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = (signed long)SPI_Rx_buf[2*ECG_Chan_num]; 	// Get MSB 8 bits 
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = ADS1x9x_ECG_Data_buf[ECG_Chan_num] << 8;
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] |= SPI_Rx_buf[2*ECG_Chan_num+1];				// Get LSB 8 bits
+		}
+		
+		ADS1x9x_ECG_Data_buf[0] = ADS1x9x_ECG_Data_buf[0] << 8;								// to make compatable with 24 bit devices
+		break;
+		
+	case ECG_STATE_ACQUIRE_DATA:
+	case ECG_STATE_RECORDING:
+		{
+   			uint8_t *ptr;
+			ptr = &ECGRecorder_data_Buf[Recorder_head << 3]; // Point to Circular buffer at head*8;
+			*ptr++ = SPI_Rx_buf[0];				// Store status 
+			*ptr++ = SPI_Rx_buf[1];				// Store status 
+//			if ((SPI_Rx_buf[2] & 0x80 ) == 0x80)// CH0[15-8] = MSB ( 16Bit device)
+//			*ptr++ = 0xFF;						// CH0[23-16] = 0xFF ( 16Bit device) sign
+//			else
+//			*ptr++ = 0;							// CH0[23-16] = 0 ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[2];				// CH0[15-8] = MSB ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[3];				// CH0[7-0] = LSB ( 16Bit device)
+			*ptr++ = 0;
+//			if ((SPI_Rx_buf[2] & 0x80 ) == 0x80)// CH0[15-8] = MSB ( 16Bit device)
+//			*ptr++ = 0xFF;						// CH0[23-16] = 0xFF ( 16Bit device) sign
+//			else
+//			*ptr++ = 0;							// CH0[23-16] = 0 ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[2];				// CH0[15-8] = MSB ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[3];				// CH0[7-0] = LSB ( 16Bit device)
+			*ptr++ = 0;
+			Recorder_head ++;					// Increment Circuler buffer pointer
+			
+			if(Recorder_head == 32)				// Check for Circuler buffer depth.
+				Recorder_head = 0;				// Rest once it reach to MAX
+		}
+		break;
+       
+	default:
+		break;
+	}
+}
+
+void ADS1192_Parse_Data_Packet(void)
+{
+	uint8_t ECG_Chan_num;
+	
+	switch(ECG_Recoder_state.state)
+	{
+	case ECG_STATE_IDLE:
+		break;
+		
+	case ECG_STATE_DATA_STREAMING:
+		for(ECG_Chan_num=0;ECG_Chan_num<3;ECG_Chan_num++)
+		{
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = (signed long)SPI_Rx_buf[2*ECG_Chan_num];	// Get MSB Bits15-bits8
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = ADS1x9x_ECG_Data_buf[ECG_Chan_num] << 8;
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] |= SPI_Rx_buf[2*ECG_Chan_num+1];				// Get LSB Bits7-bits0
+		}
+		ADS1x9x_ECG_Data_buf[0] = ADS1x9x_ECG_Data_buf[0] << 8;				// to make compatable with 24 bit devices
+		break;
+
+	case ECG_STATE_ACQUIRE_DATA:
+	case ECG_STATE_RECORDING:
+		{
+			uint8_t *ptr;
+
+			ptr = &ECGRecorder_data_Buf[Recorder_head << 3]; // Point to Circular buffer at head*8;
+			*ptr++ = SPI_Rx_buf[0];				// Store status 
+			*ptr++ = SPI_Rx_buf[1];				// Store status 
+
+			//			if ((SPI_Rx_buf[2] & 0x80 ) == 0x80)// CH0[15-8] = MSB ( 16Bit device)
+			//			*ptr++ = 0xFF;						// CH0[23-16] = 0xFF ( 16Bit device) sign
+			//			else
+			//			*ptr++ = 0;							// CH0[23-16] = 0 ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[2];				// CH0[15-8] = MSB ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[3];				// CH0[7-0] = LSB ( 16Bit device)
+			*ptr++ = 0;
+
+			//			if ((SPI_Rx_buf[4] & 0x80 ) == 0x80)// CH1[15-8] = MSB ( 16Bit device)
+			//			*ptr++ = 0xFF;						// CH1[23-16] = 0xFF ( 16Bit device) sign
+			//			else
+			//			*ptr++ = 0;							// CH1[23-16] = 0 ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[4];				// CH1[15-8] = MSB ( 16Bit device)
+			*ptr++ = SPI_Rx_buf[5];				// CH1[7-0] = LSB ( 16Bit device)
+			*ptr++ = 0;
+			Recorder_head ++;					// Increment Circuler buffer pointer
+
+			if(Recorder_head == 32)				// Check for Circuler buffer depth.
+				Recorder_head = 0;				// Rest once it reach to MAX
+		}
+		break;
+       
+	default:
+		break;
+	}
+}
+
+void ADS1291_Parse_Data_Packet(void)
+{
+	uint8_t ECG_Chan_num;
+
+	switch(ECG_Recoder_state.state)
+	{		
+	case ECG_STATE_DATA_STREAMING:
+		for(ECG_Chan_num=0;ECG_Chan_num<2;ECG_Chan_num++)
+		{
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = (signed long)SPI_Rx_buf[3*ECG_Chan_num];	// Get Bits23-bits16
+
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = ADS1x9x_ECG_Data_buf[ECG_Chan_num] << 8;
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] |= SPI_Rx_buf[3*ECG_Chan_num+1];				// Get Bits15-bits8
+
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = ADS1x9x_ECG_Data_buf[ECG_Chan_num] << 8;
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] |= SPI_Rx_buf[3*ECG_Chan_num+2];				// Get Bits7-bits0
+		}
+		break;
+
+   case ECG_STATE_ACQUIRE_DATA:
+   case ECG_STATE_RECORDING:
+		{
+			uint8_t *ptr;
+			
+			ptr = &ECGRecorder_data_Buf[Recorder_head<<3]; // Point to Circular buffer at head*8;
+
+			*ptr++ = SPI_Rx_buf[0];				// Store status 
+			*ptr++ = SPI_Rx_buf[1];				// Store status 
+			//SPI_Rx_buf[2] is always 0x00 so it is discarded
+
+			*ptr++ = SPI_Rx_buf[3];				// CH0[23-16] = MSB ( 24 Bit device)
+			*ptr++ = SPI_Rx_buf[4];				// CH0[15-8] = MID ( 24 Bit device)
+			*ptr++ = SPI_Rx_buf[5];				// CH0[7-0] = LSB ( 24 Bit device)
+
+			*ptr++ = SPI_Rx_buf[3];				// CH1[23-16] = Ch0 to mentain uniformality
+			*ptr++ = SPI_Rx_buf[4];				// CH1[15-8] =  Ch0 to mentain uniformality
+			*ptr++ = SPI_Rx_buf[5];				// CH1[7-0] =  Ch0 to mentain uniformality
+
+			Recorder_head++;					// Increment Circuler buffer pointer
+			if(Recorder_head == 32)				// Check for Circuler buffer depth.
+				Recorder_head = 0;				// Rest once it reach to MAX
+		}
+		break;
+       
+	default:
+		break;
+	}
+}
+
+void ADS1292x_Parse_Data_Packet(void)
+{
+	uint8_t ECG_Chan_num;
+	
+	switch(ECG_Recoder_state.state)
+	{		
+	case ECG_STATE_DATA_STREAMING:
+		for(ECG_Chan_num=0;ECG_Chan_num<3;ECG_Chan_num++)
+		{
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = (signed long)SPI_Rx_buf[3*ECG_Chan_num];
+
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = ADS1x9x_ECG_Data_buf[ECG_Chan_num] << 8;
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] |= SPI_Rx_buf[3*ECG_Chan_num+1];
+
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] = ADS1x9x_ECG_Data_buf[ECG_Chan_num] << 8;
+			ADS1x9x_ECG_Data_buf[ECG_Chan_num] |= SPI_Rx_buf[3*ECG_Chan_num+2];
+		}
+		break;
+
+	case ECG_STATE_ACQUIRE_DATA:
+	case ECG_STATE_RECORDING:
+		{
+			uint8_t *ptr;
+
+			ptr = &ECGRecorder_data_Buf[Recorder_head << 3]; // Point to Circular buffer at head*8;
+			*ptr++ = SPI_Rx_buf[0];				// Store status 
+			*ptr++ = SPI_Rx_buf[1];				// Store status 
+			//SPI_Rx_buf[2] is always 0x00 so it is discarded
+
+			*ptr++ = SPI_Rx_buf[3];				// CH0[23-16] = MSB ( 24 Bit device)
+			*ptr++ = SPI_Rx_buf[4];				// CH0[15-8] = MID ( 24 Bit device)
+			*ptr++ = SPI_Rx_buf[5];				// CH0[7-0] = LSB ( 24 Bit device)
+
+			*ptr++ = SPI_Rx_buf[6];				// CH1[23-16] = MSB ( 24 Bit device)
+			*ptr++ = SPI_Rx_buf[7];				// CH1[15-8] = MID ( 24 Bit device)
+			*ptr++ = SPI_Rx_buf[8];				// CH1[7-0] = LSB ( 24 Bit device)
+
+			Recorder_head ++;					// Increment Circuler buffer pointer
+			if(Recorder_head == 32)				// Check for circuler buffer depth.
+				Recorder_head = 0;				// Rest once it reach to MAX
+		}
+		break;
+
+	default:
+		break;
+	}
+}
+
+void ADS1x9x_Parse_Data_Packet(void)
+{
+	switch(ADS1x9xRegVal[0]&0x03)
+	{
+	case ADS1191_16BIT:
+		ADS1191_Parse_Data_Packet();
+		break;
+	
+	case ADS1192_16BIT:
+		ADS1192_Parse_Data_Packet();
+		break;
+	
+	case ADS1291_24BIT:
+		ADS1291_Parse_Data_Packet();
+		break;
+	
+	case ADS1292_24BIT:
+		ADS1292x_Parse_Data_Packet();
+		break;
+	}
+	
+	//ECG_Data_rdy = 1;
+}
+
+void ADS1x9x_Default_Reg_Init(void)
+{
+	uint8_t Reg_Init_i;
+	
+	if((ADS1x9xRegVal[0]&0X20) == 0x20)
+	{
+		for(Reg_Init_i=1;Reg_Init_i<12; Reg_Init_i++)
+		{
+			ADS_Reg_Write(Reg_Init_i, ADS1x9xR_Default_Reg_Settings[Reg_Init_i]);
+		}
+	}
+	else
+	{
+		for(Reg_Init_i=1;Reg_Init_i<12; Reg_Init_i++)
+		{
+			ADS_Reg_Write(Reg_Init_i, ADS1x9x_Default_Reg_Settings[Reg_Init_i]);
+		}
+	}
+}
+
+void ADS1x9x_Read_All_Regs(uint8_t *ADS1x9xReg_buf)
+{
+	uint8_t Regs_i;
+
+	for(Regs_i=ADS_REG_ID;Regs_i<ADS_REG_MAX;Regs_i++)
+	{
+		ADS_Reg_Read(Regs_i, &ADS1x9xReg_buf[Regs_i]);
+	#ifdef ADS_DEBUG
+		LOGD("reg_%d:%x", Regs_i, ADS1x9xReg_buf[Regs_i]);
+	#endif
+	}
+}
+
+void ADS1x9x_Sensor_Init(void)
 {
 	uint8_t device_id;
 
-	ads_data_write(ADS_DATA_COM_SDATAC);
-	ads_sys_set(ADS_SYS_COM_STOP);
+	ADS_Data_Write(ADS_DATA_COM_SDATAC);
+	ADS_Sys_Set(ADS_SYS_COM_STOP);
 	
-	ads_reg_read(ADS_REG_ID, &device_id);
+	ADS_Reg_Read(ADS_REG_ID, &device_id);
+#ifdef ADS_DEBUG	
 	LOGD("id:%x", device_id);
+#endif
 	switch((device_id&0xE0)>>5)
 	{
 	case 0b000:
+	#ifdef ADS_DEBUG	
 		LOGD("Reserved 000");
+	#endif
 		break;
 	case 0b001:
+	#ifdef ADS_DEBUG	
 		LOGD("Reserved 001");
+	#endif
 		break;
 	case 0b010:
+	#ifdef ADS_DEBUG
 		LOGD("ADS1x9x device");
+	#endif
 		break;
 	case 0b011:
+	#ifdef ADS_DEBUG
 		LOGD("ADS1292R device");
+	#endif
 		break;
 	case 0b100:
+	#ifdef ADS_DEBUG
 		LOGD("Reserved 100");
+	#endif
 		break;
 	case 0b101:
+	#ifdef ADS_DEBUG
 		LOGD("Reserved 101");
+	#endif
 		break;
 	case 0b110:
+	#ifdef ADS_DEBUG
 		LOGD("Reserved 110");
+	#endif
 		break;
 	case 0b111:
+	#ifdef ADS_DEBUG
 		LOGD("Reserved 111");
+	#endif
 		break;
 	}
 
 	switch(device_id&0x03)
 	{
 	case 0b00:
+	#ifdef ADS_DEBUG
 		LOGD("ADS1191");
+	#endif
 		break;
 	case 0b01:
+	#ifdef ADS_DEBUG
 		LOGD("ADS1192");
+	#endif
 		break;
 	case 0b10:
+	#ifdef ADS_DEBUG
 		LOGD("ADS1291");
+	#endif
 		break;
 	case 0b11:
+	#ifdef ADS_DEBUG
 		LOGD("ADS1292 and ADS1292R");
+	#endif
 		break;
 	}
 
-	for(uint8_t i=ADS_REG_CFG1;i<=ADS_REG_GPIO;i++)
-	{
-		uint8_t data;
-
-		ads_reg_read(i, &data);
-		LOGD("reg_%d:%x", i, data);
-	}
+	ADS1x9x_Read_All_Regs(ADS1x9xRegVal);
+	ADS1x9x_Default_Reg_Init();
+	ADS1x9x_Read_All_Regs(ADS1x9xRegVal);
+	
+	ADS1x9x_PowerDown_Enable();
 }
 
-void ads1292_init(void)
+void ADS1x9x_Init(void)
 {
 	int err;
 	gpio_flags_t flag = GPIO_INPUT|GPIO_PULL_UP;
@@ -335,7 +811,10 @@ void ads1292_init(void)
 	gpio_pin_set(gpio_ecg, ECG_RESET_PIN, 0);
 	k_sleep(K_MSEC(50));
 	gpio_pin_set(gpio_ecg, ECG_RESET_PIN, 1);
+	
 	gpio_pin_configure(gpio_ecg, ECG_START_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_ecg, ECG_CS_PIN, 0);
+	
 	gpio_pin_configure(gpio_ecg, ECG_CS_PIN, GPIO_OUTPUT);
 	gpio_pin_set(gpio_ecg, ECG_CS_PIN, 1);
 	
@@ -348,10 +827,10 @@ void ads1292_init(void)
 	
 	ECG_SPI_Init();
 
-	ads1292_sensor_init();
+	ADS1x9x_Sensor_Init();
 }
 
-void asd1292_msg_process(void)
+void ADS1x9x_Msg_Process(void)
 {
 	if(ecg_trige_flag)
 	{

@@ -11,6 +11,7 @@
 
 #include <stdint.h>
 #include <zephyr/kernel.h>
+#include <zephyr/drivers/spi.h>
 
 //SPIÒý½Å¶¨Òå
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(spi2), okay)
@@ -76,10 +77,38 @@ typedef enum
 	ADS_REG_LOFF_STAT		= 0x08,
 	ADS_REG_RESP1			= 0x09,
 	ADS_REG_RESP2			= 0x0A,
-	ADS_REG_GPIO			= 0x0B
+	ADS_REG_GPIO			= 0x0B,
+	ADS_REG_MAX
 }ADS_RED_ADDR;
 
-extern void ads1292_init(void);
-extern void asd1292_msg_process(void);
+typedef enum
+{
+	ADS1191_16BIT	 		= 0x00,
+	ADS1192_16BIT			= 0x01,
+	ADS1291_24BIT			= 0x10,
+	ADS1292_24BIT			= 0x11,
+	ADS_SENSOR_MAX
+}ADS_SENSOR_TYPE;
+
+typedef struct
+{
+	uint8_t state;
+	uint8_t SamplingRate;
+	uint8_t command;
+}ADS1x9x_state_t;
+
+typedef enum
+{
+	ECG_STATE_IDLE,
+	ECG_STATE_DATA_STREAMING,
+	ECG_STATE_ACQUIRE_DATA,
+	ECG_STATE_DOWNLOAD,
+	ECG_STATE_RECORDING,
+	ECG_STATE_DATA_LOGGER,
+	ECG_STATE_MAX
+}ECG_RECORDER_STATE;
+
+extern void ADS1x9x_Init(void);
+extern void ADS1x9x_Msg_Process(void);
 
 #endif/*__ADS1292_H__*/
