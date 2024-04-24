@@ -810,6 +810,9 @@ bool ADS1x9x_IsLeadOn(void)
 	uint8_t data;
 	
 	ADS_Reg_Read(ADS_REG_LOFF_STAT, &data);
+	//if(data&0x1c)
+	//{
+	//}
 }
 
 void ADS1x9x_Init(void)

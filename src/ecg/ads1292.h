@@ -108,6 +108,7 @@ typedef enum
 	ECG_STATE_MAX
 }ECG_RECORDER_STATE;
 
+extern ADS1x9x_state_t ECG_Recoder_state;
 extern void ADS1x9x_Init(void);
 extern void ADS1x9x_Msg_Process(void);
 
