@@ -43,7 +43,7 @@ void system_init(void)
 #ifdef CONFIG_PPG_SUPPORT
 	//PPG_i2c_off();
 #endif
-	pmu_init();
+	//pmu_init();
 	key_init();
 	//flash_init();
 	

@@ -795,6 +795,23 @@ void ADS1x9x_Sensor_Init(void)
 	ADS1x9x_PowerDown_Enable();
 }
 
+void ADS1x9x_Interrupt_Enable(void)
+{
+	gpio_pin_interrupt_configure(gpio_ecg, ECG_DRDY_PIN, GPIO_INT_ENABLE|GPIO_INT_EDGE_FALLING);
+}
+
+void ADS1x9x_Interrupt_Disable(void)
+{
+	gpio_pin_interrupt_configure(gpio_ecg, ECG_DRDY_PIN, GPIO_INT_DISABLE);
+}
+
+bool ADS1x9x_IsLeadOn(void)
+{
+	uint8_t data;
+	
+	ADS_Reg_Read(ADS_REG_LOFF_STAT, &data);
+}
+
 void ADS1x9x_Init(void)
 {
 	int err;
