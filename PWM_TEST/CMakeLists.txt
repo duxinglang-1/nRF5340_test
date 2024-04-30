@@ -51,5 +51,6 @@ add_subdirectory(src/logger)
 
 add_subdirectory_ifdef(CONFIG_PPG_SUPPORT src/ppg)
 add_subdirectory_ifdef(CONFIG_ECG_SUPPORT src/ecg)
+add_subdirectory_ifdef(CONFIG_BUZZER_SUPPORT src/buzzer)
 add_subdirectory_ifdef(CONFIG_WATCHDOG src/watchdog)
 add_subdirectory_ifdef(CONFIG_FACTORY_TEST_SUPPORT src/factory_test)

@@ -53,6 +53,9 @@ void system_init(void)
 #ifdef CONFIG_ECG_SUPPORT
 	ECG_init();
 #endif
+#ifdef CONFIG_BUZZER_SUPPORT
+	buzzer_init();
+#endif
 	//ble_init();
 	//LogInit();
 }

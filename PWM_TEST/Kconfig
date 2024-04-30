@@ -323,6 +323,12 @@ config BLE_SUPPORT
 	default n
 endmenu #BLE
 
+menu "BUZZER"
+config BUZZER_SUPPORT
+	bool "buzzer support"
+	default n
+endmenu #BUZZER
+
 menu "SYNC"
 config SYNC_SUPPORT
 	bool "sync support"
