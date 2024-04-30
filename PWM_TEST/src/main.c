@@ -122,6 +122,9 @@ int main(void)
 	#ifdef CONFIG_ECG_SUPPORT
 		ECGMsgProcess();
 	#endif
+	#ifdef CONFIG_BUZZER_SUPPORT
+		BuzzerMsgProcess();
+	#endif
 		//SettingsMsgPorcess();
 		//UartMsgProc();
 	#ifdef CONFIG_FACTORY_TEST_SUPPORT
