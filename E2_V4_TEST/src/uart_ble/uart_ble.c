@@ -35,7 +35,7 @@
 #endif
 
 
-#define MCU_INT_PIN		15
+#define MCU_INT_PIN		22
 #define MCU_WAKE_PIN	25
 
 #define BUF_MAXSIZE	4096
@@ -1620,6 +1620,9 @@ void ble_receive_data_handle(uint8_t *buf, uint32_t len)
 	case GET_WIFI_MAC_ID:
 		send_wifi_device_mac();
 		break;
+	case GET_WIFI_AP_ID:
+		APP_Ask_wifi_data();
+		break;
 #endif/*CONFIG_WIFI_SUPPORT*/
 
 	default:
@@ -1778,7 +1781,7 @@ void send_wifi_device_version(void)
 
 void send_wifi_scanned_ap(uint8_t *data, uint32_t data_len)
 {
-	uint8_t buff[128] = {0};
+	uint8_t buff[4096] = {0};
 	uint16_t i,len=0;
 
 #ifdef UART_DEBUG
