@@ -1,0 +1,56 @@
+#
+# Copyright (c) 2018 Nordic Semiconductor ASA
+#
+# SPDX-License-Identifier: LicenseRef-BSD-5-Clause-Nordic
+#
+choice LOG_MODE
+	default LOG_MODE_IMMEDIATE
+endchoice
+
+
+
+menu "WATCH DOG"
+config WATCHDOG_TIMEOUT_MSEC
+	int "Watchdog timeout in milliseconds"
+	default 10000
+endmenu
+
+
+
+menu "WIFI"
+config WIFI_SUPPORT
+	bool "wifi support"
+	default n
+endmenu #WIFI
+
+
+
+menu "BLE"
+config BLE_SUPPORT
+	bool "ble support"
+	default n
+endmenu #BLE
+
+
+
+
+menu "FACTORY_TEST"
+config FACTORY_TEST_SUPPORT
+	bool "factory test support"
+	default n
+endmenu #FACTORY_TEST_SUPPORT
+
+menu "FAST_KEY"
+config FAST_KEY_SUPPORT
+	bool "fast key support"
+	default n
+endmenu #FAST_KEY_SUPPORT
+
+
+menu "Zephyr Kernel"
+source "Kconfig.zephyr"
+endmenu
+
+module = APPLICATION_MODULE
+module-str = Application module
+source "subsys/logging/Kconfig.template.log_config"
