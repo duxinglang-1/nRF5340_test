@@ -38,7 +38,7 @@
 #define WIFI_PORT	""
 #endif
 
-#define WIFI_RETRY_COUNT_MAX	5
+#define WIFI_RETRY_COUNT_MAX	1
 #define BUF_MAXSIZE	2048
 
 #define WIFI_AUTO_OFF_TIME_SEC	(1)
@@ -417,134 +417,7 @@ void wifi_receive_data_handle(uint8_t *buf, uint32_t len)
 		return;
 	}
 
-	if(strstr(ptr,WIFI_DATA_HEAD))
-	{
-		//+CWLAP:(-61,"f4:84:8d:8e:9f:eb")
-		//+CWLAP:(-67,"da:f1:5b:ff:f2:bc")
-		//+CWLAP:(-67,"e2:c1:13:2d:9e:47")
-		//+CWLAP:(-73,"7c:94:2a:39:9f:50")
-		//+CWLAP:(-76,"52:c2:e8:c6:fa:1e")
-		//+CWLAP:(-80,"80:ea:07:73:96:1a")
-		//\r\n
-		//OK
-		//\r\n 
-		while(1)
-		{
-			uint8_t len;
-		    uint8_t str_rssi[8]={0};
-			uint8_t str_mac[32]={0};
-
-			//head
-			ptr1 = strstr(ptr,WIFI_DATA_HEAD);
-			if(ptr1 == NULL)
-			{
-				ptr2 = ptr;
-				goto loop;
-			}
-
-			//scaned data flag
-			flag = true;
-			
-			//rssi
-			ptr += strlen(WIFI_DATA_HEAD);
-			ptr1 = strstr(ptr,WIFI_DATA_RSSI_BEGIN);         //取字符串中的,之后的字符
-			if(ptr1 == NULL)
-			{
-				ptr2 = ptr;
-				goto loop;
-			}
-			
-			ptr2 = strstr(ptr1+1,WIFI_DATA_RSSI_END);
-			if(ptr2 == NULL)
-			{
-				ptr2 = ptr1+1;
-				goto loop;
-			}
-
-			len = ptr2 - (ptr1+1);
-			if(len > 4)
-			{
-				goto loop;
-			}
-			
-			memcpy(str_rssi, ptr1+1, len);
-
-			//MAC
-			ptr1 = strstr(ptr2,WIFI_DATA_MAC_BEGIN);
-			if(ptr1 == NULL)
-			{
-				goto loop;
-			}
-
-			ptr2 = strstr(ptr1+1,WIFI_DATA_MAC_END);
-			if(ptr2 == NULL)
-			{
-				ptr2 = ptr1+1;
-				goto loop;
-			}
-
-			len = ptr2 - (ptr1+1);
-			if(len != 17)
-			{
-				goto loop;
-			}
-
-			memcpy(str_mac, ptr1+1, len);
-			
-			if(test_wifi_flag)
-			{
-				uint8_t buf[128] = {0};
-
-				count++;
-				if(count<=6)
-				{
-				#if defined(LCD_VGM068A4W01_SH1106G)||defined(LCD_VGM096064A6W01_SP5090)
-					sprintf(buf, "%02d|", -(atoi(str_rssi)));
-				#else
-					sprintf(buf, "%s|%02d\n", str_mac, -(atoi(str_rssi)));
-				#endif
-					strcat(tmpbuf, buf);
-				}
-			}
-			else
-			{
-				strcpy(wifi_data.node[wifi_data.count].rssi, str_rssi);
-				strcpy(wifi_data.node[wifi_data.count].mac, str_mac);
-				
-				wifi_data.count++;
-				if(wifi_data.count == WIFI_NODE_MAX)
-					break;
-			}
-
-		loop:
-			ptr = ptr2+1;
-			if(*ptr == 0x00)
-				break;
-		}
-	}	
-	
-	if(test_wifi_flag)
-	{
-		if(count > 0)
-		{
-			memset(wifi_test_info,0,sizeof(wifi_test_info));
-			sprintf(wifi_test_info, "%d\n", count);
-			strcat(wifi_test_info, tmpbuf);
-			wifi_test_update_flag = true;
-
-		#ifdef CONFIG_FACTORY_TEST_SUPPORT
-			FTWifiStatusUpdate(count);
-		#endif
-		}
-	}
-	else
-	{
-		if(flag && (wifi_data.count >= WIFI_LOCAL_MIN_COUNT))	//扫描有效数据
-		{
-			wifi_get_scanned_data();
-			wifi_off_flag = true;
-		}
-	}
+	send_wifi_scanned_ap(ptr, len);
 }
 
 void MenuStartWifi(void)
