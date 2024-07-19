@@ -9,24 +9,66 @@
 #ifndef __ESP8266_H__
 #define __ESP8266_H__
 
-#define WIFI_NODE_MAX	5
-#define WIFI_DATA_HEAD			"+CWLAP:"
-#define WIFI_DATA_RSSI_BEGIN	"("
-#define WIFI_DATA_RSSI_END		","
-#define WIFI_DATA_MAC_BEGIN		"\""
-#define WIFI_DATA_MAC_END		"\")"
-#define WIFI_DATA_BRACKET_BEIN	"<"
-#define WIFI_DATA_BRACKET_END	">"
-#define WIFI_DATA_SEP_COLON		":"
-#define WIFI_SLEEP_CMD			"AT+GSLP=0\r\n"
-#define WIFI_SLEEP_REPLY		"AT+GSLP=0\r\n\r\nOK"
-#define WIFI_GET_VER			"AT+GMR\r\n"
-#define WIFI_GET_MAC_CMD		"AT+CIPAPMAC_CUR?\r\n"
-#define WIFI_GET_MAC_REPLY		"+CIPAPMAC_CUR"
-#define WIFI_DATA_VER_BIN		"Bin version"
-#define WIFI_DATA_END			"\r\n"
+#define WIFI_AP_SSID				"HUAWEI-3YN3AN"
+#define WIFI_AP_PASSWORD			"km320000"
+#define WIFI_SERVER_HOST			"47.107.51.89"
+#define WIFI_SERVER_PORT			"8088"
+#define WIFI_SERVER_HTTP_HOST		WIFI_SERVER_HOST
+#define WIFI_SERVER_HTTP_URL		"/e2Data"
+#define WIFI_SERVER_HTTP_TYPE		"application/json"//"application/x-www-form-urlencoded"
+#define WIFI_HTTP_RSP_OK			"HTTP/1.1 200"
+#define WIFI_HTTP_RSP_LENGTH		"Content-Length: "
+#define WIFI_HTTP_HEAD_ENDING		"\r\n\r\n"
+
+#define WIFI_NODE_MAX				5
+#define WIFI_DATA_HEAD				"+CWLAP:"
+#define WIFI_DATA_RSSI_BEGIN		"("
+#define WIFI_DATA_RSSI_END			","
+#define WIFI_DATA_MAC_BEGIN			"\""
+#define WIFI_DATA_MAC_END			"\")"
+#define WIFI_DATA_BRACKET_BEIN		"<"
+#define WIFI_DATA_BRACKET_END		">"
+#define WIFI_DATA_SEP_COLON			":"
+#define WIFI_CMD_SLEEP				"AT+GSLP=0\r\n"
+#define WIFI_SLEEP_REPLY			"AT+GSLP=0\r\n\r\nOK"
+#define WIFI_CMD_GET_VER			"AT+GMR\r\n"
+#define WIFI_CMD_GET_MAC			"AT+CIPAPMAC_DEF?\r\n"
+#define WIFI_GET_MAC_REPLY			"+CIPAPMAC_DEF"
+#define WIFI_DATA_VER_BIN			"Bin version"
+#define WIFI_DATA_END				"\r\n"
+
+#define WIFI_CMD_SET_CWMODE				"AT+CWMODE=1\r\n"
+#define WIFI_CMD_SEARCH_AP				"AT+CWLAP="
+#define WIFI_CMD_CONNECT_AP				"AT+CWJAP="
+#define WIFI_CMD_CHECK_STA_IP			"AT+CIFSR\r\n"
+#define WIFI_CMD_CHECK_STATUS			"AT+CIPSTATUS\r\n"
+#define WIFI_CMD_CONNECT_SERVER			"AT+CIPSTART=\"TCP\","
+#define WIFI_CMD_DISCONECT_SERVER		"AT+CIPCLOSE"
+#define WIFI_CMD_SEND_START				"AT+CIPSEND="
+
+#define WIFI_DISCONNECT_AP				"WIFI DISCONNECT"
+#define WIFI_CONNECTED_AP				"WIFI CONNECTED"
+#define WIFI_GOT_IP						"WIFI GOT IP"
+#define WIFI_CONNECTED_SERVER			"CONNECT\r\n\r\nOK"
+#define WIFI_ALREAY_CONNECTED_SERVER	"ALREADY CONNECTED"
+#define WIFI_DISCONNECTED_SERVER		"CLOSED"
+#define WIFI_SEND_DATA_OK				"SEND OK"
+#define WIFI_RECEIVE_DATA				"+IPD,"
+#define WIFI_IS_BUSY					"busy p...\r\n"
 
 #define WIFI_LOCAL_MIN_COUNT	3
+
+typedef enum
+{
+	WIFI_STATUS_OFF,
+	WIFI_STATUS_ON,
+	WIFI_STATUS_GOT_AP,
+	WIFI_STATUS_CONNECTING_TO_AP,
+	WIFI_STATUS_CONNECTED_TO_AP,
+	WIFI_STATUS_CONNECTING_TO_SERVER,
+	WIFI_STATUS_CONNECTED_TO_SERVER,
+	WIFI_STATUS_MAX
+}WIFI_STATUS;
 
 typedef struct
 {
@@ -39,6 +81,24 @@ typedef struct
 	uint8_t count;
 	wifi_node_infor node[WIFI_NODE_MAX];
 }wifi_infor;
+
+typedef struct
+{
+	uint8_t ssid[128];
+	uint8_t password[128];
+}wifi_ap_infor;
+
+typedef struct
+{
+	uint8_t host[128];
+	uint8_t port[10];
+}wifi_server_infor;
+
+typedef struct
+{
+	wifi_ap_infor ap;
+	wifi_server_infor server;
+}wifi_transfer_config_t;
 
 extern bool wifi_is_on;
 extern bool sos_wait_wifi;
@@ -58,4 +118,5 @@ extern uint8_t wifi_test_info[256];
 extern bool wifi_is_working(void);
 extern void ble_turn_on(void);
 extern void wifi_receive_data_handle(uint8_t *buf, uint32_t len);
+extern void wifi_send_payload(uint8_t *data, uint32_t datalen);
 #endif/*__ESP8266_H__*/

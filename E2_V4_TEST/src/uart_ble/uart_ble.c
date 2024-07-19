@@ -18,7 +18,7 @@
 #include "Uart_ble.h"
 #include "inner_flash.h"
 
-#define UART_DEBUG
+//#define UART_DEBUG
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay)
 #define BLE_DEV DT_NODELABEL(uart0)
@@ -43,51 +43,54 @@
 #define PACKET_HEAD	0xAB
 #define PACKET_END	0x88
 
-#define BLE_WORK_MODE_ID		0xFF10			//52810工作状态正常
-#define GET_WIFI_VER_ID			0xFF11			//获取WIFI版本信息
-#define GET_WIFI_MAC_ID			0xFF12			//获取WIFI Mac address信息
-#define GET_WIFI_AP_ID			0xFF13			//扫描附近可用的WIFI APS
-#define START_WIIF_DATA_ID		0xFEEF			//开启透传模式
-#define STOP_WIFI_DATA_ID		0xEFFE			//关闭透传模式
-#define HEART_RATE_ID			0xFF31			//心率
-#define BLOOD_OXYGEN_ID			0xFF32			//血氧
-#define BLOOD_PRESSURE_ID		0xFF33			//血压
-#define TEMPERATURE_ID			0xFF62			//体温
-#define	ONE_KEY_MEASURE_ID		0xFF34			//一键测量
-#define	PULL_REFRESH_ID			0xFF35			//下拉刷新
-#define	SLEEP_DETAILS_ID		0xFF36			//睡眠详情
-#define	FIND_DEVICE_ID			0xFF37			//查找手环
-#define SMART_NOTIFY_ID			0xFF38			//智能提醒
-#define	ALARM_SETTING_ID		0xFF39			//闹钟设置
-#define USER_INFOR_ID			0xFF40			//用户信息
-#define	SEDENTARY_ID			0xFF41			//久坐提醒
-#define	SHAKE_SCREEN_ID			0xFF42			//抬手亮屏
-#define	MEASURE_HOURLY_ID		0xFF43			//整点测量设置
-#define	SHAKE_PHOTO_ID			0xFF44			//摇一摇拍照
-#define	LANGUAGE_SETTING_ID		0xFF45			//中英日文切换
-#define	TIME_24_SETTING_ID		0xFF46			//12/24小时设置
-#define	FIND_PHONE_ID			0xFF47			//查找手机回复
-#define	WEATHER_INFOR_ID		0xFF48			//天气信息下发
-#define	TIME_SYNC_ID			0xFF49			//时间同步
-#define	TARGET_STEPS_ID			0xFF50			//目标步数
-#define	BATTERY_LEVEL_ID		0xFF51			//电池电量
-#define	FIRMWARE_INFOR_ID		0xFF52			//固件版本号
-#define	FACTORY_RESET_ID		0xFF53			//清除手环数据
-#define	ECG_ID					0xFF54			//心电
-#define	LOCATION_ID				0xFF55			//获取定位信息
-#define	DATE_FORMAT_ID			0xFF56			//年月日格式设置
-#define NOTIFY_CONTENT_ID		0xFF57			//智能提醒内容
-#define CHECK_WHITELIST_ID		0xFF58			//判断手机ID是否在手环白名单
-#define INSERT_WHITELIST_ID`	0xFF59			//将手机ID插入白名单
-#define DEVICE_SEND_128_RAND_ID	0xFF60			//手环发送随机的128位随机数
-#define PHONE_SEND_128_AES_ID	0xFF61			//手机发送AES 128 CBC加密数据给手环
+#define BLE_WORK_MODE_ID			0xFF10			//52810工作状态正常
+#define GET_WIFI_VER_ID				0xFF11			//获取WIFI版本信息
+#define GET_WIFI_MAC_ID				0xFF12			//获取WIFI Mac address信息
+#define SET_WIFI_OFF_ID				0xFF13			//关闭WIFI
+#define SET_WIFI_ON_ID				0xFF14			//打开WIFI
+#define GET_WIFI_AP_ID				0xFF15			//扫描附近可用的WIFI APS
+#define SEND_WIFI_DATA_ID			0xFE16			//通过WIFI透传数据
+#define SET_WIFI_CONNECTED_AP_ID	0xFF17			//设置WIFI透传连接的AP信息
+#define SET_WIIF_CONNECTED_SEVER_ID	0xFF18			//设置WIFI透传连接的后台信息
+#define HEART_RATE_ID				0xFF31			//心率
+#define BLOOD_OXYGEN_ID				0xFF32			//血氧
+#define BLOOD_PRESSURE_ID			0xFF33			//血压
+#define TEMPERATURE_ID				0xFF62			//体温
+#define	ONE_KEY_MEASURE_ID			0xFF34			//一键测量
+#define	PULL_REFRESH_ID				0xFF35			//下拉刷新
+#define	SLEEP_DETAILS_ID			0xFF36			//睡眠详情
+#define	FIND_DEVICE_ID				0xFF37			//查找手环
+#define SMART_NOTIFY_ID				0xFF38			//智能提醒
+#define	ALARM_SETTING_ID			0xFF39			//闹钟设置
+#define USER_INFOR_ID				0xFF40			//用户信息
+#define	SEDENTARY_ID				0xFF41			//久坐提醒
+#define	SHAKE_SCREEN_ID				0xFF42			//抬手亮屏
+#define	MEASURE_HOURLY_ID			0xFF43			//整点测量设置
+#define	SHAKE_PHOTO_ID				0xFF44			//摇一摇拍照
+#define	LANGUAGE_SETTING_ID			0xFF45			//中英日文切换
+#define	TIME_24_SETTING_ID			0xFF46			//12/24小时设置
+#define	FIND_PHONE_ID				0xFF47			//查找手机回复
+#define	WEATHER_INFOR_ID			0xFF48			//天气信息下发
+#define	TIME_SYNC_ID				0xFF49			//时间同步
+#define	TARGET_STEPS_ID				0xFF50			//目标步数
+#define	BATTERY_LEVEL_ID			0xFF51			//电池电量
+#define	FIRMWARE_INFOR_ID			0xFF52			//固件版本号
+#define	FACTORY_RESET_ID			0xFF53			//清除手环数据
+#define	ECG_ID						0xFF54			//心电
+#define	LOCATION_ID					0xFF55			//获取定位信息
+#define	DATE_FORMAT_ID				0xFF56			//年月日格式设置
+#define NOTIFY_CONTENT_ID			0xFF57			//智能提醒内容
+#define CHECK_WHITELIST_ID			0xFF58			//判断手机ID是否在手环白名单
+#define INSERT_WHITELIST_ID`		0xFF59			//将手机ID插入白名单
+#define DEVICE_SEND_128_RAND_ID		0xFF60			//手环发送随机的128位随机数
+#define PHONE_SEND_128_AES_ID		0xFF61			//手机发送AES 128 CBC加密数据给手环
 
-#define	BLE_CONNECT_ID			0xFFB0			//BLE断连提醒
-#define	CTP_NOTIFY_ID			0xFFB1			//CTP触屏消息
-#define GET_BLE_VER_ID			0xFFB2			//获取52810版本号
-#define GET_BLE_MAC_ADDR_ID		0xFFB3			//获取BLE MAC地址
-#define GET_BLE_STATUS_ID		0xFFB4			//获取BLE当前工作状态	0:关闭 1:休眠 2:广播 3:连接
-#define SET_BEL_WORK_MODE_ID	0xFFB5			//设置BLE工作模式		0:关闭 1:打开 2:唤醒 3:休眠
+#define	BLE_CONNECT_ID				0xFFB0			//BLE断连提醒
+#define	CTP_NOTIFY_ID				0xFFB1			//CTP触屏消息
+#define GET_BLE_VER_ID				0xFFB2			//获取52810版本号
+#define GET_BLE_MAC_ADDR_ID			0xFFB3			//获取BLE MAC地址
+#define GET_BLE_STATUS_ID			0xFFB4			//获取BLE当前工作状态	0:关闭 1:休眠 2:广播 3:连接
+#define SET_BEL_WORK_MODE_ID		0xFFB5			//设置BLE工作模式		0:关闭 1:打开 2:唤醒 3:休眠
 
 bool blue_is_on = true;
 #ifdef CONFIG_PM_DEVICE
@@ -1607,21 +1610,36 @@ void ble_receive_data_handle(uint8_t *buf, uint32_t len)
 		break;
 #endif/*CONFIG_BLE_SUPPORT*/
 	case GET_BLE_VER_ID:
-		send_ble_version();
+		ble_send_version_to_mcu();
 		break;
 	case GET_BLE_MAC_ADDR_ID:
-		send_ble_device_mac();
+		ble_send_mac_to_mcu();
 		break;
 		
 #ifdef CONFIG_WIFI_SUPPORT
 	case GET_WIFI_VER_ID:
-		send_wifi_device_version();
+		ble_send_wifi_version_to_mcu();
 		break;
 	case GET_WIFI_MAC_ID:
-		send_wifi_device_mac();
+		ble_send_wifi_mac_to_mcu();
 		break;
 	case GET_WIFI_AP_ID:
 		APP_Ask_wifi_data();
+		break;
+	case SET_WIFI_ON_ID:
+		wifi_enable();
+		break;
+	case SET_WIFI_OFF_ID:
+		wifi_disable();
+		break;
+	case SEND_WIFI_DATA_ID:
+		ble_receiving_data_from_mcu(buf, len);
+		break;
+	case SET_WIFI_CONNECTED_AP_ID:
+		ble_set_wifi_ap(buf, len);
+		break;
+	case SET_WIIF_CONNECTED_SEVER_ID:
+		ble_set_wifi_server(buf, len);
 		break;
 #endif/*CONFIG_WIFI_SUPPORT*/
 
@@ -1701,7 +1719,7 @@ void BleSendData(uint8_t *data, uint32_t datalen)
 }
 
 #ifdef CONFIG_WIFI_SUPPORT
-void send_wifi_device_mac(void)
+void ble_send_wifi_mac_to_mcu(void)
 {
 	uint8_t buff[128] = {0};
 	uint16_t i,len=0;
@@ -1740,7 +1758,7 @@ void send_wifi_device_mac(void)
 	BleSendData(buff, len);		
 }
 
-void send_wifi_device_version(void)
+void ble_send_wifi_version_to_mcu(void)
 {
 	uint8_t buff[128] = {0};
 	uint16_t i,len=0;
@@ -1779,48 +1797,147 @@ void send_wifi_device_version(void)
 	BleSendData(buff, len);		
 }
 
-void send_wifi_scanned_ap(uint8_t *data, uint32_t data_len)
+void ble_send_wifi_scanned_ap_to_mcu(uint8_t *data, uint32_t data_len)
 {
-	uint8_t buff[4096] = {0};
-	uint16_t i,len=0;
+	uint8_t *buff = NULL;
+	uint16_t i,len = 0;
 
 #ifdef UART_DEBUG
 	LOGD("begin");
 #endif
 
-	//head
-	buff[len++] = 0xAB;
-	//len
-	buff[len++] = 0x00;
-	buff[len++] = 0x00;
-	//id
-	buff[len++] = (GET_WIFI_AP_ID>>8); 	
-	buff[len++] = (uint8_t)(GET_WIFI_AP_ID&0x00ff);		
-	//status
-	buff[len++] = 0x80;
-	//control
-	buff[len++] = 0x00;
-	//mac addr data
-	memcpy(&buff[len], data, data_len);
-	len += data_len;
-	//crc
-	buff[len++] = 0x00;
-	//end
-	buff[len++] = 0x88; 
+	buff = k_malloc(data_len+9);
+	if(buff != NULL) 
+	{
+		memset(buff, 0, data_len+9);
+		
+		//head
+		buff[len++] = 0xAB;
+		//len
+		buff[len++] = 0x00;
+		buff[len++] = 0x00;
+		//id
+		buff[len++] = (GET_WIFI_AP_ID>>8); 	
+		buff[len++] = (uint8_t)(GET_WIFI_AP_ID&0x00ff);		
+		//status
+		buff[len++] = 0x80;
+		//control
+		buff[len++] = 0x00;
+		//mac addr data
+		memcpy(&buff[len], data, data_len);
+		len += data_len;
+		//crc
+		buff[len++] = 0x00;
+		//end
+		buff[len++] = 0x88; 
 
-	//Adjust data length
-	buff[1] = (len-3)>>8;
-	buff[2] = (len-3)&0x00ff;
-	
-	for(i=0;i<len-2;i++)
-		buff[len-2] += buff[i];
+		//Adjust data length
+		buff[1] = (len-3)>>8;
+		buff[2] = (len-3)&0x00ff;
+		
+		for(i=0;i<len-2;i++)
+			buff[len-2] += buff[i];
 
-	BleSendData(buff, len); 
+		BleSendData(buff, len);
+
+		k_free(buff);
+	}
 }
 
+void ble_send_wifi_data_to_mcu(uint8_t *data, uint32_t data_len)
+{
+	uint8_t *reply = NULL;
+	uint16_t i,reply_len = 0;
+
+#ifdef UART_DEBUG
+	LOGD("%s", data);
+#endif
+
+	reply = k_malloc(data_len+9);
+	if(reply != NULL) 
+	{
+		memset(reply, 0, data_len+9);
+		
+		//packet head
+		reply[reply_len++] = PACKET_HEAD;
+		//data_len
+		reply[reply_len++] = 0x00;
+		reply[reply_len++] = 0x00;
+		//data ID
+		reply[reply_len++] = (SEND_WIFI_DATA_ID>>8);		
+		reply[reply_len++] = (uint8_t)(SEND_WIFI_DATA_ID&0x00ff);
+		//status
+		reply[reply_len++] = 0x80;
+		//control
+		reply[reply_len++] = 0x00;
+		//date context
+		memcpy(&reply[reply_len], data, data_len);
+		reply_len += data_len;
+		//CRC
+		reply[reply_len++] = 0x00;
+		//packet end
+		reply[reply_len++] = PACKET_END;
+		
+		//Adjust data length
+		reply[1] = (reply_len-3)>>8;
+		reply[2] = (reply_len-3)&0x00ff;
+		
+		for(i=0;i<(reply_len-2);i++)
+			reply[reply_len-2] += reply[i];
+		
+		BleSendData(reply, reply_len);
+
+		k_free(reply);
+	}
+}
+
+void ble_set_wifi_ap(uint8_t *data, uint32_t data_len)
+{
+	uint8_t *ptr1,*ptr2;
+	uint8_t ap_ssid[128] = {0};
+	uint8_t ap_pw[128] = {0};
+
+	ptr1 = strstr(&data[7], ",");
+	if(ptr1 != NULL)
+	{
+		memcpy(ap_ssid, &data[7], ptr1-&data[7]);
+		ptr1 += strlen(",");
+
+		memcpy(ap_pw, ptr1, (data_len-2)-(ptr1-data));
+
+		wifi_set_connected_ap(ap_ssid, ap_pw);
+	}
+}
+
+void ble_set_wifi_server(uint8_t *data, uint32_t data_len)
+{
+	uint8_t *ptr1,*ptr2;
+	uint8_t server_host[128] = {0};
+	uint8_t server_port[10] = {0};
+
+	ptr1 = strstr(&data[7], ",");
+	if(ptr1 != NULL)
+	{
+		memcpy(server_host, &data[7], ptr1-&data[7]);
+		ptr1 += strlen(",");
+
+		memcpy(server_port, ptr1, (data_len-2)-(ptr1-data));
+
+		wifi_set_connected_server(server_host, server_port);
+	}
+}
+
+void ble_receiving_data_from_mcu(uint8_t *data, uint32_t data_len)
+{
+#ifdef UART_DEBUG
+	LOGD("%s", &data[7]);
+#endif
+
+	wifi_send_payload(&data[7], data_len-9);
+}
 #endif/*CONFIG_WIFI_SUPPORT*/
 
-void send_ble_device_mac(void)
+void ble_send_mac_to_mcu(void)
 {
 	uint8_t buff[128] = {0};
 	uint16_t i,len=0;
@@ -1863,7 +1980,7 @@ void send_ble_device_mac(void)
 	BleSendData(buff, len);		
 }
 
-void send_ble_version(void)
+void ble_send_version_to_mcu(void)
 {
 	uint8_t buff[128] = {0};
 	uint16_t i,len=0;
