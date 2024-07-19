@@ -3,8 +3,8 @@
 ** Descriptions:			communicate source file
 ** Created By:				xie biao
 ** Created Date:			2021-04-28
-** Modified Date:      		2021-04-28 
-** Version:			    	V1.0
+** Modified Date:      		2024-07-17 
+** Version:			    	V1.1
 ******************************************************************************************************/
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
@@ -59,8 +59,7 @@ void SendPowerOnData(void)
 	strcat(reply, ",");
 	
 	//battery
-	GetBatterySocString(tmpbuf);
-	strcat(reply, tmpbuf);
+	strcat(reply, "100");
 	strcat(reply, ",");
 
 	//mcu fw version
