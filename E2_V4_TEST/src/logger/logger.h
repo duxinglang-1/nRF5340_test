@@ -19,6 +19,6 @@
 /* 有自动添加函数名 */
 #define LOGD(fmt, args...) LOGDD(__func__, fmt, ##args)
 
-#define TEST_DEBUG
+//#define TEST_DEBUG
 
 #endif/*__LOGGER_H__*/
