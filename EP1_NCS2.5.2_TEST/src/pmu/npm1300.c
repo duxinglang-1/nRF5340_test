@@ -28,7 +28,7 @@ static const struct battery_model battery_model = {
 #ifdef PMU_SENSOR_NPM1300
 
 //#define SHOW_LOG_IN_SCREEN
-//#define PMU_DEBUG
+#define PMU_DEBUG
 
 #ifdef GPIO_ACT_I2C
 #define PMU_SCL		0
@@ -105,7 +105,7 @@ static npm1300_charger_config_t charger_config =
 										0,
 										0,
 										true,
-										false,
+										true,
 										false
 									};
 
@@ -750,6 +750,7 @@ static void nPM1300_CheckTemp(struct k_timer *timer_id)
 void nPM1300_Reset(void)
 {
 	nPM1300_WriteReg(REG_TASKSWRESET, 0x01);		//Turn off all Supplies and apply internal reset
+	k_sleep(K_MSEC(50));
 }
 
 void nPM1300_Buck1Disable(void)
