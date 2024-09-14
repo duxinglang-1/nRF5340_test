@@ -28,7 +28,6 @@ static const struct battery_model battery_model = {
 #ifdef PMU_SENSOR_NPM1300
 
 //#define SHOW_LOG_IN_SCREEN
-#define PMU_DEBUG
 
 #ifdef GPIO_ACT_I2C
 #define PMU_SCL		0
@@ -134,7 +133,6 @@ bool pmu_redraw_bat_flag = true;
 bool lowbat_pwr_off_flag = false;
 bool sys_pwr_off_flag = false;
 bool read_soc_status = false;
-bool charger_is_connected = false;
 bool pmu_bat_has_notify = false;
 bool sys_shutdown_is_running = false;
 
@@ -390,26 +388,25 @@ static bool init_i2c(void)
 #endif	
 }
 
-static int32_t platform_write(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
+static int32_t platform_write(struct device *handle, uint8_t addr, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
-	uint32_t i=0;
-	uint8_t data[len+2];
 	uint32_t rslt = 0;
+	uint8_t data[len+2];
 
 	data[0] = (uint8_t)(reg>>8);
 	data[1] = (uint8_t)(reg&0x00ff);
 	memcpy(&data[2], bufp, len);
 
 #ifdef GPIO_ACT_I2C
-	rslt = I2C_write_data(NPM1300_I2C_ADDR, data, sizeof(data));
+	rslt = I2C_write_data(addr, data, sizeof(data));
 #else
-	rslt = i2c_write(handle, data, sizeof(data), NPM1300_I2C_ADDR);
+	rslt = i2c_write(handle, data, sizeof(data), addr);
 #endif
 
 	return rslt;
 }
 
-static int32_t platform_read(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
+static int32_t platform_read(struct device *handle, uint8_t addr, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
 	uint32_t rslt = 0;
 	uint8_t data[2] = {0};
@@ -418,17 +415,17 @@ static int32_t platform_read(struct device *handle, uint16_t reg, uint8_t *bufp,
 	data[1] = (uint8_t)(reg&0x00ff);
 
 #ifdef GPIO_ACT_I2C
-	rslt = I2C_write_data(NPM1300_I2C_ADDR, data, sizeof(data));
+	rslt = I2C_write_data(addr, data, sizeof(data));
 	if(rslt == 0)
 	{
-		rslt = I2C_read_data(NPM1300_I2C_ADDR, bufp, len);
+		rslt = I2C_read_data(addr, bufp, len);
 	}
 #else
-	rslt = i2c_write(handle, data, sizeof(data), NPM1300_I2C_ADDR);
+	rslt = i2c_write(handle, data, sizeof(data), addr);
 	if(rslt == 0)
 	{
 		Delay_ms(10);
-		rslt = i2c_read(handle, bufp, len, NPM1300_I2C_ADDR);
+		rslt = i2c_read(handle, bufp, len, addr);
 	}
 #endif
 	return rslt;
@@ -438,7 +435,7 @@ static int nPM1300_WriteRegMulti(NPM1300_REG reg, uint8_t *value, uint8_t len)
 {
 	int32_t ret;
 
-	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, reg, value, len);
+	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, NPM1300_I2C_ADDR, reg, value, len);
 	if(ret != 0)
 	{
 		ret = NPM1300_ERROR; 
@@ -455,7 +452,7 @@ static int nPM1300_WriteReg(NPM1300_REG reg, uint8_t value)
 { 
     int32_t ret;
 
-	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, reg, &value, 1);
+	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, NPM1300_I2C_ADDR, reg, &value, 1);
 	if(ret != 0)
 	{
 		ret = NPM1300_ERROR;  
@@ -472,7 +469,7 @@ static int nPM1300_ReadReg(NPM1300_REG reg, uint8_t *value)
 {
     int32_t ret;
 
-	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, reg, value, 1);
+	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, NPM1300_I2C_ADDR, reg, value, 1);
     if(ret != 0)
     {
         ret = NPM1300_ERROR;
@@ -489,7 +486,7 @@ static int nPM1300_ReadRegMulti(NPM1300_REG reg, uint8_t *value, uint8_t len)
 {
     int32_t ret;
 
-	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, reg, value, len);
+	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, NPM1300_I2C_ADDR, reg, value, len);
     if(ret != 0)
         ret = NPM1300_ERROR;
     else

@@ -12,11 +12,14 @@
 #include <stdint.h>
 #include <zephyr/kernel.h>
 
-//#define PMU_SENSOR_MAX20353
-#define PMU_SENSOR_NPM1300
+//#define PMU_DEBUG
 
-typedef int32_t (*pmu_write_ptr)(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
-typedef int32_t (*pmu_read_ptr)(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len);
+//#define PMU_SENSOR_MAX20353
+//#define PMU_SENSOR_NPM1300
+#define PMU_SENSOR_CW221X_CW630X
+
+typedef int32_t (*pmu_write_ptr)(struct device *handle, uint8_t addr, uint16_t reg, uint8_t *bufp, uint16_t len);
+typedef int32_t (*pmu_read_ptr)(struct device *handle, uint8_t addr, uint16_t reg, uint8_t *bufp, uint16_t len);
 
 typedef struct {
   /** Component mandatory fields **/

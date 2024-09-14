@@ -647,7 +647,7 @@ int MAX20353_WriteRegMulti(max20353_reg_t reg, uint8_t *value, uint8_t len)
 {
 	int32_t ret;
 
-	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, reg, value, len);
+	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, MAX20353_I2C_ADDR, reg, value, len);
 	if(ret != 0)
 	{
 		ret = MAX20353_ERROR; 
@@ -664,7 +664,7 @@ int MAX20353_WriteReg(max20353_reg_t reg, uint8_t value)
 { 
     int32_t ret;
 
-	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, reg, &value, 1);
+	ret = pmu_dev_ctx.write_reg(pmu_dev_ctx.handle, MAX20353_I2C_ADDR, reg, &value, 1);
 	if(ret != 0)
 	{
 		ret = MAX20353_ERROR;  
@@ -684,7 +684,7 @@ int MAX20353_ReadReg(max20353_reg_t reg, uint8_t *value)
 {
     int32_t ret;
 
-	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, reg, value, 1);
+	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, MAX20353_I2C_ADDR, reg, value, 1);
     if(ret != 0)
     {
         ret = MAX20353_ERROR;
@@ -704,7 +704,7 @@ int MAX20353_ReadRegMulti(max20353_reg_t reg, uint8_t *value, uint8_t len)
 {
     int32_t ret;
 
-	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, reg, value, len);
+	ret = pmu_dev_ctx.read_reg(pmu_dev_ctx.handle, MAX20353_I2C_ADDR, reg, value, len);
     if(ret != 0)
         ret = MAX20353_ERROR;
     else

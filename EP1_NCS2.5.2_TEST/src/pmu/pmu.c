@@ -16,6 +16,8 @@
 
 uint8_t g_bat_soc = 0;
 
+bool charger_is_connected = false;
+
 BAT_CHARGER_STATUS g_chg_status = BAT_CHARGING_NO;
 BAT_LEVEL_STATUS g_bat_level = BAT_LEVEL_NORMAL;
 

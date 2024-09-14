@@ -14,7 +14,6 @@
 #ifdef PMU_SENSOR_MAX20353
 
 //#define SHOW_LOG_IN_SCREEN
-//#define PMU_DEBUG
 
 #ifdef GPIO_ACT_I2C
 #define PMU_SCL		0
@@ -72,7 +71,6 @@ bool pmu_redraw_bat_flag = true;
 bool lowbat_pwr_off_flag = false;
 bool sys_pwr_off_flag = false;
 bool read_soc_status = false;
-bool charger_is_connected = false;
 bool pmu_bat_has_notify = false;
 bool sys_shutdown_is_running = false;
 
@@ -343,37 +341,40 @@ static bool init_i2c(void)
 #endif	
 }
 
-static int32_t platform_write(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
+static int32_t platform_write(struct device *handle, uint8_t addr, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
-	uint32_t i=0;
-	uint8_t data[len+1];
 	uint32_t rslt = 0;
+	uint8_t data[len+1];
 
-	data[0] = reg;
+	data[0] = (uint8_t)(reg&0x00ff);
 	memcpy(&data[1], bufp, len);
+	
 #ifdef GPIO_ACT_I2C
-	rslt = I2C_write_data(MAX20353_I2C_ADDR, data, len+1);
+	rslt = I2C_write_data(addr, data, sizeof(data));
 #else
-	rslt = i2c_write(handle, data, len+1, MAX20353_I2C_ADDR);
+	rslt = i2c_write(handle, data, sizeof(data), addr);
 #endif
 	return rslt;
 }
 
-static int32_t platform_read(struct device *handle, uint16_t reg, uint8_t *bufp, uint16_t len)
+static int32_t platform_read(struct device *handle, uint8_t addr, uint16_t reg, uint8_t *bufp, uint16_t len)
 {
 	uint32_t rslt = 0;
+	uint8_t data[1] = {0};
 
+	data[0] = (uint8_t)(reg&0x00ff);
+	
 #ifdef GPIO_ACT_I2C
-	rslt = I2C_write_data(MAX20353_I2C_ADDR, &reg, 1);
+	rslt = I2C_write_data(addr, data, sizeof(data));
 	if(rslt == 0)
 	{
-		rslt = I2C_read_data(MAX20353_I2C_ADDR, bufp, len);
+		rslt = I2C_read_data(addr, bufp, len);
 	}
 #else
-	rslt = i2c_write(handle, &reg, 1, MAX20353_I2C_ADDR);
+	rslt = i2c_write(handle, data, sizeof(data), addr);
 	if(rslt == 0)
 	{
-		rslt = i2c_read(handle, bufp, len, MAX20353_I2C_ADDR);
+		rslt = i2c_read(handle, bufp, len, addr);
 	}
 #endif
 	return rslt;
