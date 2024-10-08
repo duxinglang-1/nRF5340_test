@@ -682,7 +682,7 @@ void pmu_alert_proc(void)
 	if((data&0x04) == 0x04)
 	{
 		pmu_battery_update();
-		pmu_status_update();
+		pmu_charge_update();
 	}
 }
 
