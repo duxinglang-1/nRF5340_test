@@ -1,0 +1,15 @@
+{
+    "files.associations": {
+        "*.cjson": "jsonc",
+        "*.wxss": "css",
+        "*.wxs": "javascript",
+        "gpio.h": "c",
+        "kernel.h": "c",
+        "nrfx_qspi.h": "c",
+        "spi.h": "c",
+        "log.h": "c",
+        "nrf_qspi.h": "c",
+        "cpu.h": "c",
+        "devicetree.h": "c"
+    }
+}
