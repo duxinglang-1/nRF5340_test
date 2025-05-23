@@ -86,6 +86,14 @@ LOG_MODULE_REGISTER(co5300_display, LOG_LEVEL_DBG);
 #define CO5300_R11 0x11 // 退出睡眠模式（SLPOUT）
 #define CO5300_R29 0x29 // 开启显示（DISPON）
 
+static const nrf_qspi_cinstr_len_t cmd_cinstr_len[] = {
+	NRF_QSPI_CINSTR_LEN_4B,
+	NRF_QSPI_CINSTR_LEN_5B,
+	NRF_QSPI_CINSTR_LEN_6B,
+	NRF_QSPI_CINSTR_LEN_7B,
+	NRF_QSPI_CINSTR_LEN_8B,
+	NRF_QSPI_CINSTR_LEN_9B
+};
 // 私有数据结构
 static const struct device *qspi_dev = DEVICE_DT_GET(CO5300_QSPI_BUS);
 static const struct device *gpio_dev;
@@ -177,14 +185,6 @@ static void set_vci_en(bool state)
 {
     gpio_pin_set(gpio_dev, vci_en_pin, state);
 }
-static const nrf_qspi_cinstr_len_t cmd_cinstr_len[] = {
-    [1] = NRF_QSPI_CINSTR_LEN_1B,
-    [2] = NRF_QSPI_CINSTR_LEN_2B,
-    [3] = NRF_QSPI_CINSTR_LEN_3B,
-    [4] = NRF_QSPI_CINSTR_LEN_4B,
-    [5] = NRF_QSPI_CINSTR_LEN_5B
-    // 根据实际需求扩展
-};
 
 // 写寄存器函数（Command: 0x02）
 static nrfx_err_t co5300_write_register(uint8_t reg_addr, const uint8_t *data, size_t len) {
@@ -301,24 +301,59 @@ static void co5300_send_cmd_data(uint8_t reg_address, const uint8_t *data,
 }
 
 // 发送多个字节到CO5300
-static void co5300_send_data(const uint8_t *data, size_t len)
+static void co5300_send_data(uint8_t cmd, uint8_t *data, uint32_t len)
 {
+	nrfx_err_t res;
+
     // 设置为数据模式（DC引脚高电平）
     set_dc_pin(0);
     gpio_pin_set(gpio_dev, cs_pin, 0); // 选中设备
 
     // 分段传输大数据包（避免QSPI缓冲区溢出）
     nrf_qspi_cinstr_conf_t cfg = {
-        .opcode = 0x02,
-        .length = len,
-        .io2_level = true,
-        .io3_level = true,
-        .wipwait = false,
-        .wren = false,
-    };
+									.opcode = 0x02,
+									.io2_level = false,
+									.io3_level = true,
+									.wipwait = false,
+									.wren = false,
+								};
 
     uint8_t tx_buff[8] = {0x00};
     //memcpy(tx_buff, data, len);
+
+#if 1
+	tx_buff[0] = 0x00;
+	tx_buff[1] = cmd;
+	tx_buff[2] = 0x00;
+
+	if(len < ARRAY_SIZE(cmd_cinstr_len))
+	{
+		cfg.length = cmd_cinstr_len[len];
+
+		memcpy(tx_buff + 3, data, len);
+		res = nrfx_qspi_cinstr_xfer(&res, tx_buff, NULL);
+	}
+	else
+	{
+		cfg.length = NRF_QSPI_CINSTR_LEN_1B;
+		size_t len_1;
+
+		res = nrfx_qspi_lfm_start(&cfg);
+
+		len_1 = sizeof(tx_buff) - 3;
+		memcpy(tx_buff + 3, data, len_1);
+
+		if(res == NRFX_SUCCESS)
+		{
+			res = nrfx_qspi_lfm_xfer(tx_buff, NULL, sizeof(tx_buff), false);
+		}
+
+		if(res == NRFX_SUCCESS)
+		{
+			res = nrfx_qspi_lfm_xfer(data + len_1, NULL, len - len_1, true);
+		}
+	}
+#else
     nrfx_err_t err = nrfx_qspi_cinstr_xfer(&cfg, tx_buff, NULL);
     if (err != NRFX_SUCCESS)
     {
@@ -328,6 +363,8 @@ static void co5300_send_data(const uint8_t *data, size_t len)
     {
         LOG_INF("Data transfer success");
     }
+#endif
+
     gpio_pin_set(gpio_dev, cs_pin, 1); // 取消选中
     k_sleep(K_MSEC(10));               // 保持与命令发送相同的延时
 }
@@ -335,7 +372,7 @@ static void co5300_send_data(const uint8_t *data, size_t len)
 // 发送单个数据字节
 static void co5300_send_data_byte(uint8_t data)
 {
-    co5300_send_data(&data, 1);
+    co5300_send_data(data, NULL, 0);
 }
 
 // 设置显示窗口
@@ -344,20 +381,20 @@ static void co5300_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1
     uint8_t cmd_data[4];
 
     // 设置列地址
-    co5300_send_cmd(CO5300_CASET);
+    //co5300_send_cmd(CO5300_CASET);
     cmd_data[0] = (x0 >> 8) & 0xFF;
     cmd_data[1] = x0 & 0xFF;
     cmd_data[2] = (x1 >> 8) & 0xFF;
     cmd_data[3] = x1 & 0xFF;
-    co5300_send_data(cmd_data, 4);
+    co5300_send_data(CO5300_CASET, cmd_data, 4);
 
     // 设置行地址
-    co5300_send_cmd(CO5300_RASET);
+    //co5300_send_cmd(CO5300_RASET);
     cmd_data[0] = (y0 >> 8) & 0xFF;
     cmd_data[1] = y0 & 0xFF;
     cmd_data[2] = (y1 >> 8) & 0xFF;
     cmd_data[3] = y1 & 0xFF;
-    co5300_send_data(cmd_data, 4);
+    co5300_send_data(CO5300_RASET, cmd_data, 4);
 }
 
 // 初始化CO5300显示屏
@@ -463,7 +500,7 @@ void co5300_fill_screen(uint16_t color)
     // 发送大量数据时，分块发送以避免栈溢出
     for (i = 0; i < SCREEN_WIDTH * SCREEN_HEIGHT; i++)
     {
-        co5300_send_data(data, 2);
+        //co5300_send_data(data, 2);
     }
 }
 
@@ -495,7 +532,7 @@ void co5300_flush(void)
             uint16_t color = frame_buffer[j * SCREEN_WIDTH + i];
             pixel_data[0] = color >> 8;
             pixel_data[1] = color & 0xFF;
-            co5300_send_data(pixel_data, 2);
+            //co5300_send_data(pixel_data, 2);
         }
     }
 }
@@ -558,15 +595,25 @@ void qspi_init()
 {
     nrfx_qspi_config_t config = {
         .pins = {
-            .sck_pin = 17, // QSPI SCK 引脚
-            .csn_pin = 18, // QSPI CS 引脚
-            .io0_pin = 13, // QSPI IO0 引脚
-            .io1_pin = 14, // QSPI IO1 引脚
-            .io2_pin = 15, // QSPI IO2 引脚
-            .io3_pin = 16  // QSPI IO3 引脚
-        },
-        .prot_if = {.readoc = NRF_QSPI_READOC_FASTREAD, .writeoc = NRF_QSPI_WRITEOC_PP, .addrmode = NRF_QSPI_ADDRMODE_24BIT, .dpmconfig = false},
-        .phy_if = {.sck_freq = NRF_QSPI_FREQ_DIV4, .sck_delay = 0x20, .dpmen = false}};
+		            .sck_pin = 17, // QSPI SCK 引脚
+		            .csn_pin = 18, // QSPI CS 引脚
+		            .io0_pin = 13, // QSPI IO0 引脚
+		            .io1_pin = 14, // QSPI IO1 引脚
+		            .io2_pin = 15, // QSPI IO2 引脚
+		            .io3_pin = 16  // QSPI IO3 引脚
+		        },
+        .prot_if = {
+        				.readoc 	= NRF_QSPI_READOC_FASTREAD, 
+						.writeoc 	= NRF_QSPI_WRITEOC_PP, 
+						.addrmode 	= NRF_QSPI_ADDRMODE_24BIT, 
+						.dpmconfig 	= false
+					},
+        .phy_if = {
+        				.sck_freq 	= NRF_QSPI_FREQ_DIV4, 
+						.sck_delay 	= 0x20, 
+						.dpmen 		= false
+					}
+		};
 
     // Initialize the QSPI module
     nrfx_err_t err_code = nrfx_qspi_init(&config, NULL, NULL);
