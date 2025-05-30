@@ -17,18 +17,28 @@
 #define COL 390			//宽
 #define ROW 450			//高
 
-#define LCD_TYPE_SPI			//SPI
+//#define LCD_TYPE_SPI			//SPI
+#define LCD_TYPE_QSPI			//QSPI
 
 //LCD的画笔颜色和背景色	   
 extern uint16_t  POINT_COLOR;//默认红色    
 extern uint16_t  BACK_COLOR; //背景颜色.默认为白色
 
 //LCM
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(spi3), okay)
-#define LCD_DEV DT_NODELABEL(spi3)
-#else
-#error "qspi devicetree node is disabled"
-#define LCD_DEV	""
+#ifdef LCD_TYPE_SPI
+  #if DT_NODE_HAS_STATUS(DT_NODELABEL(spi3), okay)
+    #define LCD_DEV DT_NODELABEL(spi3)
+  #else
+    #error "spi3 devicetree node is disabled"
+    #define LCD_DEV	""
+    #endif
+#elif defined(LCD_TYPE_QSPI)
+  #if DT_NODE_HAS_STATUS(DT_NODELABEL(qspi), okay)
+    #define LCD_DEV DT_NODELABEL(qspi)
+  #else
+    #error "qspi devicetree node is disabled"
+    #define LCD_DEV	""
+  #endif
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio1), okay)
@@ -39,9 +49,9 @@ extern uint16_t  BACK_COLOR; //背景颜色.默认为白色
 #endif
 
 #define CS		10
-#define	RST		7
-#define	RS		8
-#define	VIC		11
+#define	RST		11
+#define	RS		13
+#define	EN		12
 
 #define LCD_DATA_LEN 4096
 

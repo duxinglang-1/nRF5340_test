@@ -7,6 +7,7 @@
 ** Version:			    	V1.0
 ******************************************************************************************************/
 #include <zephyr/drivers/spi.h>
+#include <nrfx_qspi.h>
 #include <zephyr/drivers/gpio.h>
 #include "lcd.h"
 #include "font.h"
@@ -19,15 +20,30 @@
 #include "LCD_EQTAC175T1371_CO5300.h"
 
 #define SPI_BUF_LEN	8
-//#define SPI_MUIT_BY_CS
+#define SPI_MUIT_BY_CS
 
+#define QSPI_STD_CMD_WRSR  0x01
+#define QSPI_STD_CMD_RSTEN 0x66
+#define QSPI_STD_CMD_RST   0x99
+
+struct device *qspi_lcd;
 struct device *spi_lcd;
 struct device *gpio_lcd;
 
+static struct k_timer backlight_timer;
+
+static const nrf_qspi_cinstr_len_t cmd_cinstr_len[] = 
+{
+	NRF_QSPI_CINSTR_LEN_4B,
+	NRF_QSPI_CINSTR_LEN_5B,
+	NRF_QSPI_CINSTR_LEN_6B,
+	NRF_QSPI_CINSTR_LEN_7B,
+	NRF_QSPI_CINSTR_LEN_8B,
+	NRF_QSPI_CINSTR_LEN_9B
+};
+
 struct spi_buf_set tx_bufs,rx_bufs;
 struct spi_buf tx_buff,rx_buff;
-
-static struct k_timer backlight_timer;
 
 static struct spi_config spi_cfg = 
 {
@@ -61,6 +77,83 @@ void LCD_CS_HIGH(void)
 }
 #endif
 
+#ifdef LCD_TYPE_QSPI
+static void LCD_QSPI_handler(nrfx_qspi_evt_t event, void *p_context)
+{
+	if (event == NRFX_QSPI_EVENT_DONE)
+	{
+		LOGD("QSPI done");
+		//gc9c01_complete(dev_data);
+	}
+}
+
+static void LCD_QSPI_Init(void)
+{
+	nrfx_qspi_config_t QSPIconfig;
+
+	//qspi_lcd = DEVICE_DT_GET(LCD_DEV);
+	//if(!qspi_lcd)
+	//	return;
+	
+	/* Configure XIP offset */
+	QSPIconfig.xip_offset = 0;
+	QSPIconfig.skip_gpio_cfg=false;
+	QSPIconfig.skip_psel_cfg=false;
+
+	/* Configure pins */
+	QSPIconfig.pins.sck_pin = 17;
+	QSPIconfig.pins.csn_pin = 18;
+	QSPIconfig.pins.io0_pin = 13;
+	QSPIconfig.pins.io1_pin = 14;
+	QSPIconfig.pins.io2_pin = 15;
+	QSPIconfig.pins.io3_pin = 16;
+
+	QSPIconfig.prot_if.readoc = NRF_QSPI_READOC_FASTREAD;
+	QSPIconfig.prot_if.writeoc = NRF_QSPI_WRITEOC_PP4O;
+	QSPIconfig.prot_if.addrmode = NRF_QSPI_ADDRMODE_24BIT;
+	QSPIconfig.prot_if.dpmconfig = false;
+
+	/* Configure physical interface */
+ 	QSPIconfig.phy_if.sck_freq = NRF_QSPI_FREQ_DIV16;
+	QSPIconfig.phy_if.sck_delay = 0x05;
+	QSPIconfig.phy_if.spi_mode = NRF_QSPI_MODE_0;
+	QSPIconfig.phy_if.dpmen = false;
+
+	nrfx_err_t err_code = nrfx_qspi_init(&QSPIconfig, LCD_QSPI_handler, NULL);
+	if(err_code != NRFX_SUCCESS)
+	{
+		LOGD("QSPI initialization failed with error: %d\n", err_code);
+		return;
+	}
+	else
+	{
+		LOGD("QSPI initialized successfully");
+	}
+}
+
+static void LCD_QSPI_Transceive(uint8_t *tx_buff, uint32_t tx_len, uint8_t *rx_buff)
+{
+	nrfx_err_t res;
+	nrf_qspi_cinstr_conf_t cfg = { 
+									.opcode    = 0x02,
+									.io2_level = false,
+									.io3_level = true,
+									.wipwait   = false,
+									.wren 	   = false
+								};
+
+	res = nrfx_qspi_cinstr_xfer(&cfg, tx_buff, NULL);
+	if(res == NRFX_SUCCESS)
+	{
+		LOGD("QSPI send success!");
+	}
+	else
+	{
+		LOGD("QSPI send fail! res:%d", res);
+	}
+}
+#endif
+
 static void LCD_SPI_Init(void)
 {
 	spi_lcd = DEVICE_DT_GET(LCD_DEV);
@@ -69,7 +162,6 @@ static void LCD_SPI_Init(void)
 		return;
 	}
 
-#if 0
 	spi_cfg.operation = SPI_OP_MODE_MASTER | SPI_WORD_SET(8);
 	spi_cfg.frequency = 8000000;
 	spi_cfg.slave = 0;
@@ -77,7 +169,6 @@ static void LCD_SPI_Init(void)
 #ifndef SPI_MUIT_BY_CS
 	spi_cfg.cs.gpio = GPIO_DT_SPEC_GET(LCD_DEV, cs_gpios);
 	spi_cfg.cs.delay = 0U;
-#endif
 #endif
 }
 
@@ -133,29 +224,103 @@ void Write_Data(uint8_t i)
 void WriteComm(uint8_t cmd, uint8_t *data, uint8_t data_len)
 {
 	uint32_t len = 4;
-	uint8_t buf[8] = {0x00};
+	uint8_t tx_buff[8],rx_buff[8];
+	nrfx_err_t res;
+	nrf_qspi_cinstr_conf_t cfg = { 
+									.opcode    = 0x02,
+									.io2_level = true,
+									.io3_level = true,
+									.wipwait   = false,
+									.wren	   = false
+								};
 
 	gpio_pin_set(gpio_lcd, RS, 0);
-	
-	buf[0] = 0x02;
-	buf[1] = 0x00;
-	buf[2] = cmd;
-	buf[3] = 0x00;
-	if(data != NULL && data_len > 0)
+
+	tx_buff[0] = 0x00;
+	tx_buff[1] = cmd;
+	tx_buff[2] = 0x00;
+
+#ifdef LCD_TYPE_QSPI
+	if(data_len < ARRAY_SIZE(cmd_cinstr_len))
 	{
-		memcpy(&buf[4], data, data_len);
-		len += data_len;
+		cfg.length = cmd_cinstr_len[data_len];
+
+		memcpy(&tx_buff[3], data, data_len);
+		res = nrfx_qspi_cinstr_xfer(&cfg, tx_buff, rx_buff);
+		if(res == NRFX_SUCCESS)
+		{
+			LOGD("nrfx_qspi_cinstr_xfer success!");
+		}
+		else
+		{
+			LOGD("nrfx_qspi_cinstr_xfer fail!res:%d", res);
+		}
+	}
+	else
+	{
+		cfg.length = NRF_QSPI_CINSTR_LEN_1B;
+		size_t len_1;
+
+		res = nrfx_qspi_lfm_start(&cfg);
+		if(res == NRFX_SUCCESS)
+		{
+			LOGD("nrfx_qspi_lfm_start success!");
+		}
+		else
+		{
+			LOGD("nrfx_qspi_lfm_start fail!res:%d", res);
+		}
+
+		len_1 = sizeof(tx_buff) - 3;
+		memcpy(&tx_buff[3], data, len_1);
+
+		if(res == NRFX_SUCCESS)
+		{
+			res = nrfx_qspi_lfm_xfer(tx_buff, NULL, sizeof(tx_buff), false);
+			if(res == NRFX_SUCCESS)
+			{
+				LOGD("nrfx_qspi_lfm_xfer 001 success!");
+			}
+			else
+			{
+				LOGD("nrfx_qspi_lfm_xfer 001 fail!res:%d", res);
+			}
+		}
+
+		if(res == NRFX_SUCCESS)
+		{
+			res = nrfx_qspi_lfm_xfer(data + len_1, NULL, data_len - len_1, true);
+			if(res == NRFX_SUCCESS)
+			{
+				LOGD("nrfx_qspi_lfm_xfer 002 success!");
+			}
+			else
+			{
+				LOGD("nrfx_qspi_lfm_xfer 002 fail!res:%d", res);
+			}
+		}
 	}
 	
-	LCD_SPI_Transceive(buf, len, NULL, 0);
+#elif defined(LCD_TYPE_SPI)
+	if(data != NULL && data_len > 0)
+	{
+		memcpy(&tx_buff[4], data, data_len);
+		len += data_len;
+	}
+
+	LCD_SPI_Transceive(tx_buff, len, NULL, 0);
+#endif
+
+	gpio_pin_set(gpio_lcd, RS, 1);
 }
 
 //дLCD����
-//i:Ҫд���ֵ
+//i:Ҫд����?
 void WriteData(uint8_t i)
 {
 	gpio_pin_set(gpio_lcd, RS, 1);
-	Write_Data(i);  
+	Write_Data(i);
+	gpio_pin_set(gpio_lcd, RS, 0);
 }
 
 void WriteDispData(uint8_t DataH,uint8_t DataL)
@@ -318,7 +483,7 @@ bool LCD_CheckID(void)
 }
 
 //��������
-//color:Ҫ���������ɫ
+//color:Ҫ����������?
 void LCD_Clear(uint16_t color)
 {
 	BlockWrite(0,0,COL,ROW);//��λ
@@ -326,7 +491,7 @@ void LCD_Clear(uint16_t color)
 	DispColor(COL*ROW, color);
 } 
 
-//�����
+//�����?
 void LCD_BL_On(void)
 {
 #ifdef LCD_BACKLIGHT_CONTROLED_BY_PMU
@@ -336,7 +501,7 @@ void LCD_BL_On(void)
 #endif	
 }
 
-//����ر�
+//����ر�?
 void LCD_BL_Off(void)
 {
 #ifdef LCD_BACKLIGHT_CONTROLED_BY_PMU
@@ -370,7 +535,7 @@ void LCD_SleepOut(void)
 	if(global_settings.backlight_time != 0)
 	{
 		bk_time = global_settings.backlight_time;
-		//xb add 2020-12-31 ̧������5����Զ�Ϣ��
+		//xb add 2020-12-31 ̧������5����Զ�Ϣ��?
 		if(sleep_out_by_wrist)
 		{
 			sleep_out_by_wrist = false;
@@ -464,19 +629,18 @@ void LCD_Init(void)
 
 #ifdef SPI_MUIT_BY_CS
 	gpio_pin_configure(gpio_lcd, CS, GPIO_OUTPUT);
-	gpio_pin_set(gpio_lcd, CS, 0);
-	gpio_pin_set(gpio_lcd, CS, 1);
-	gpio_pin_set(gpio_lcd, CS, 0);
 #endif
 	gpio_pin_configure(gpio_lcd, RST, GPIO_OUTPUT);
 	gpio_pin_configure(gpio_lcd, RS, GPIO_OUTPUT);
-	gpio_pin_configure(gpio_lcd, VIC, GPIO_OUTPUT);
+	gpio_pin_configure(gpio_lcd, EN, GPIO_OUTPUT);
 
-	gpio_pin_set(gpio_lcd, VIC, 0);
-	gpio_pin_set(gpio_lcd, VIC, 1);
-	gpio_pin_set(gpio_lcd, VIC, 0);
-	
+#ifdef LCD_TYPE_QSPI
+	LCD_QSPI_Init();
+#elif defined(LCD_TYPE_SPI)
 	LCD_SPI_Init();
+#endif
+
+	gpio_pin_set(gpio_lcd, EN, 1);
 
 	gpio_pin_set(gpio_lcd, RST, 1);
 	Delay(10);
@@ -486,8 +650,6 @@ void LCD_Init(void)
 	Delay(120);
 
 #if 1 //xb test 2025.05.22
-	WriteComm(0xFF, NULL, 0);
-
 	buffer[0] = 0x00;
 	WriteComm(0xFE, buffer, 1);
 
@@ -522,7 +684,7 @@ void LCD_Init(void)
 	WriteComm(0x2B, buffer, 4);
 
 	WriteComm(0x11, NULL, 0);
-	Delay(60);
+	Delay(120);
 	WriteComm(0x29, NULL, 0);
 
 #else
