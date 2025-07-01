@@ -115,7 +115,7 @@ static void LCD_QSPI_Init(void)
 
 	/* Configure physical interface */
  	QSPIconfig.phy_if.sck_freq = NRF_QSPI_FREQ_DIV16;
-	QSPIconfig.phy_if.sck_delay = 0x05;
+	QSPIconfig.phy_if.sck_delay = 0x01;
 	QSPIconfig.phy_if.spi_mode = NRF_QSPI_MODE_0;
 	QSPIconfig.phy_if.dpmen = false;
 
@@ -136,7 +136,7 @@ static void LCD_QSPI_Transceive(uint8_t *tx_buff, uint32_t tx_len, uint8_t *rx_b
 	nrfx_err_t res;
 	nrf_qspi_cinstr_conf_t cfg = { 
 									.opcode    = 0x02,
-									.io2_level = false,
+									.io2_level = true,
 									.io3_level = true,
 									.wipwait   = false,
 									.wren 	   = false
