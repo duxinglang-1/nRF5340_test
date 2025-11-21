@@ -6,8 +6,10 @@
 #include <zephyr/drivers/gpio.h>
 #include "max20353.h"
 #include "max20353_reg.h"
+#include "Lcd.h"
 #include "datetime.h"
 #include "settings.h"
+#include "screen.h"
 #include "external_flash.h"
 #include "logger.h"
 
@@ -71,9 +73,14 @@ bool pmu_redraw_bat_flag = true;
 bool lowbat_pwr_off_flag = false;
 bool sys_pwr_off_flag = false;
 bool read_soc_status = false;
+bool charger_is_connected = false;
 bool pmu_bat_has_notify = false;
 bool sys_shutdown_is_running = false;
 
+uint8_t g_bat_soc = 0;
+
+BAT_CHARGER_STATUS g_chg_status = BAT_CHARGING_NO;
+BAT_LEVEL_STATUS g_bat_level = BAT_LEVEL_NORMAL;
 vibrate_msg_t g_vib = {0};
 
 pmudev_ctx_t pmu_dev_ctx;
@@ -465,7 +472,7 @@ void system_power_off(uint8_t flag)
 		sys_shutdown_is_running = true;
 		
 		SaveSystemDateTime();
-		if(1)//(nb_is_connected())
+		if(nb_is_connected())
 		{
 			SendPowerOffData(flag);
 		}
@@ -548,6 +555,9 @@ void pmu_battery_update(void)
 		}
 	}
 	
+	if(g_chg_status != BAT_CHARGING_PROGRESS)
+		pmu_redraw_bat_flag = true;
+
 #ifdef CONFIG_FACTORY_TEST_SUPPORT
 	FTPMUStatusUpdate(1);
 #endif	
@@ -555,6 +565,7 @@ void pmu_battery_update(void)
 
 void pmu_status_update(void)
 {
+	bool flag = false;
 	uint8_t status0,status1;
 	static uint8_t charging_count = 0;
 
@@ -576,6 +587,7 @@ void pmu_status_update(void)
 			LOGD("BAT_CHARGING_NO");
 		#endif
 			g_chg_status = BAT_CHARGING_NO;
+			flag = true;
 		}
 		break;
 		
@@ -588,6 +600,7 @@ void pmu_status_update(void)
 		#endif
 			g_chg_status = BAT_CHARGING_PROGRESS;
 			charging_count = 0;
+			flag = true;
 		}
 		break;
 
@@ -602,7 +615,10 @@ void pmu_status_update(void)
 			#ifdef PMU_DEBUG
 				LOGD("change to finished!");
 			#endif
+				charging_count = 0;
 				g_chg_status = BAT_CHARGING_FINISHED;
+				lcd_sleep_out = true;
+				flag = true;
 			}
 		}
 		break;
@@ -625,6 +641,9 @@ void pmu_status_update(void)
 
 			last_bat_soc = g_bat_soc;
 		#endif
+
+			lcd_sleep_out = true;
+			flag = true;
 		}
 		break;
 	}
@@ -660,6 +679,8 @@ void pmu_status_update(void)
 		last_bat_soc = g_bat_soc;
 		g_bat_level = BAT_LEVEL_NORMAL;
 	#endif
+
+		flag = true;
 	}
 	else
 	{			
@@ -703,7 +724,12 @@ void pmu_status_update(void)
 			g_bat_level = BAT_LEVEL_GOOD;
 		}
 	#endif
+
+		flag = true;
 	}
+
+	if(flag)
+		pmu_redraw_bat_flag = true;
 }
 
 bool pmu_interrupt_proc(void)
@@ -764,9 +790,13 @@ bool pmu_interrupt_proc(void)
 
 				last_bat_soc = g_bat_soc;
 			#endif
+
+				lcd_sleep_out = true;
 			}
 			break;
 		}
+
+		pmu_redraw_bat_flag = true;
 	}
 	
 	if((int0&0x08) == 0x08) //USB OK Int
@@ -789,6 +819,8 @@ bool pmu_interrupt_proc(void)
 			InitCharger();
 		
 			g_chg_status = BAT_CHARGING_PROGRESS;
+			g_bat_level = BAT_LEVEL_NORMAL;
+			lcd_sleep_out = true;
 		}
 		else
 		{		
@@ -826,7 +858,10 @@ bool pmu_interrupt_proc(void)
 		#endif
 
 			ExitNotify();
+			lcd_sleep_out = true;
 		}
+
+		pmu_redraw_bat_flag = true;
 		
 	#ifdef CONFIG_FACTORY_TEST_SUPPORT
 		FTPMUStatusUpdate(2);
@@ -1211,6 +1246,22 @@ void test_soc(void)
 }
 #endif/*BATTERY_SOC_GAUGE*/
 
+void PMURedrawBatStatus(void)
+{
+	if((screen_id == SCREEN_ID_IDLE)
+		||(screen_id == SCREEN_ID_HR)
+		||(screen_id == SCREEN_ID_SPO2)
+		||(screen_id == SCREEN_ID_BP)
+		||(screen_id == SCREEN_ID_TEMP)
+		||(screen_id == SCREEN_ID_STEPS)
+		||(screen_id == SCREEN_ID_SLEEP)
+		)
+	{
+		scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_BAT;
+		scr_msg[screen_id].act = SCREEN_ACTION_UPDATE;
+	}
+}
+
 #ifdef BATTERT_NTC_CHECK
 void PMUUpdateTempForSOC(void)
 {
@@ -1324,6 +1375,14 @@ void PMUMsgProcess(void)
 		read_soc_status = false;
 	}
 #endif
+
+	if(pmu_redraw_bat_flag)
+	{
+		if(pmu_check_ok)
+			PMURedrawBatStatus();
+		
+		pmu_redraw_bat_flag = false;
+	}
 
 #ifdef BATTERT_NTC_CHECK
 	if(pmu_check_temp_flag)
