@@ -12,10 +12,7 @@
 #include <zephyr/drivers/gpio.h>
 #include "max_sh_interface.h"
 #include "max_sh_api.h"
-#include "external_flash.h"
 #include "settings.h"
-#include "lcd.h"
-#include "font.h"
 #include "logger.h"
 
 //#define MAX_DEBUG
@@ -41,10 +38,10 @@
 #define SH_MFIO_PIN            		14
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c1), okay)
-#define PPG_DEV DT_NODELABEL(i2c1)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(i2c2), okay)
+#define PPG_DEV DT_NODELABEL(i2c2)
 #else
-#error "i2c1 devicetree node is disabled"
+#error "i2c2 devicetree node is disabled"
 #define PPG_DEV	""
 #endif
 
@@ -1371,7 +1368,7 @@ bool sh_init_interface(void)
 	#endif
 	}
 
-	if((mcu_type != 1) || ((strcmp(g_ppg_ver, g_ppg_algo_ver) != 0)&&(strlen(g_ppg_algo_ver) > 0)))
+	if(0)//((mcu_type != 1) || ((strcmp(g_ppg_ver, g_ppg_algo_ver) != 0)&&(strlen(g_ppg_algo_ver) > 0)))
 	{
 need_update:
 		SH_OTA_upgrade_process();
@@ -1386,7 +1383,7 @@ need_update:
 	}
 
 	PPG_i2c_off();
-	PPG_Power_Off();
+	//PPG_Power_Off();
 	PPG_Disable();
 	return true;
 }
@@ -1523,12 +1520,12 @@ void sh_get_APP_version(void)
 bool sh_clear_bpt_cal_data(void)
 {
 	memset(&sh_bpt_cal, 0x00, CAL_RESULT_SIZE);
-	SpiFlash_Write(sh_bpt_cal, PPG_BPT_CAL_DATA_ADDR, PPG_BPT_CAL_DATA_SIZE);
+	//SpiFlash_Write(sh_bpt_cal, PPG_BPT_CAL_DATA_ADDR, PPG_BPT_CAL_DATA_SIZE);
 }
 
 bool sh_check_bpt_cal_data(void)
 {
-	SpiFlash_Read(sh_bpt_cal, PPG_BPT_CAL_DATA_ADDR, PPG_BPT_CAL_DATA_SIZE);
+	//SpiFlash_Read(sh_bpt_cal, PPG_BPT_CAL_DATA_ADDR, PPG_BPT_CAL_DATA_SIZE);
 
 	if((sh_bpt_cal[0] == 0x4f)&&(sh_bpt_cal[1] == 0x3c)&&(sh_bpt_cal[2] == 0x34)&&(sh_bpt_cal[3] == 0x01))
 		return true;
@@ -1541,7 +1538,7 @@ void sh_get_bpt_cal_data(void)
 	int status;
 	
 	status = sh_get_cfg_bpt_cal_result(&sh_bpt_cal);
-	SpiFlash_Write(sh_bpt_cal, PPG_BPT_CAL_DATA_ADDR, PPG_BPT_CAL_DATA_SIZE);
+	//SpiFlash_Write(sh_bpt_cal, PPG_BPT_CAL_DATA_ADDR, PPG_BPT_CAL_DATA_SIZE);
 }
 
 void sh_req_bpt_cal_data(void)

@@ -14,10 +14,10 @@
 #include <zephyr/drivers/spi.h>
 
 //SPIÒý½Å¶¨Òå
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(spi2), okay)
-#define ECG_DEVICE DT_NODELABEL(spi2)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(spi3), okay)
+#define ECG_DEVICE DT_NODELABEL(spi3)
 #else
-//#error "spi2 devicetree node is disabled"
+//#error "spi3 devicetree node is disabled"
 #define ECG_DEVICE	""
 #endif
 

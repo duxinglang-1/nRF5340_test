@@ -17,6 +17,9 @@
 #ifdef CONFIG_WIFI_SUPPORT
 #include "esp8266.h"
 #endif
+#ifdef CONFIG_PPG_SUPPORT
+#include "max32674.h"
+#endif
 
 //存储时间和设置项的地址ID
 #define DATETIME_ID 				1
@@ -41,6 +44,12 @@
 #define HEALTH_INDEX_MAX			2100
 #define LOCAL_INDEX_BEGIN			3000
 #define LOCAL_INDEX_MAX				3100
+
+#ifdef CONFIG_FACTORY_TEST_SUPPORT
+#define FT_STATUS_ID					12
+#define FT_SMT_RESULTS_ID				13
+#define FT_ASSEM_RESULTS_ID				14
+#endif
 
 typedef enum
 {
@@ -106,11 +115,18 @@ typedef struct
 	uint8_t spo2;
 }spo2_record_t;
 
+#ifndef CONFIG_PPG_SUPPORT
+typedef struct
+{
+	uint8_t systolic;
+	uint8_t diastolic;
+}bpt_data;
+#endif
+
 typedef struct
 {
 	sys_date_timer_t timestamp;
-	uint8_t systolic;		//收缩压
-	uint8_t diastolic;	//舒张压
+	bpt_data bpt;
 }bpt_record_t;
 
 typedef struct
@@ -125,12 +141,36 @@ typedef struct
 	spo2_record_t spo2_rec;
 	bpt_record_t bpt_rec;
 	temp_record_t temp_rec;
+	uint8_t hr_max;
+	uint8_t hr_min;
+	uint8_t spo2_max;
+	uint8_t spo2_min;
+	bpt_data bpt_max;
+	bpt_data bpt_min;
+	uint16_t deca_temp_max;
+	uint16_t deca_temp_min;
 }health_record_t;
+
+#ifdef CONFIG_WIFI_SUPPORT
+typedef struct
+{
+	sys_date_timer_t timestamp;
+	wifi_infor wifi_node;
+}wifi_record_t;
+#endif
+
+typedef struct
+{
+#ifdef CONFIG_WIFI_SUPPORT
+	wifi_record_t wifi_rec;
+#endif
+}local_record_t;
 
 typedef union
 {
 	sport_record_t sport;
 	health_record_t health;
+	local_record_t local;
 }imu_data_u;
 
 extern sport_record_t last_sport;
@@ -143,21 +183,27 @@ extern void SaveSettingsToInnerFlash(global_settings_t settings);
 extern void ReadDateTimeFromInnerFlash(sys_date_timer_t *time);
 extern void SaveDateTimeToInnerFlash(sys_date_timer_t time);
 
+extern bool save_cur_local_to_record(local_record_t *local_data);
 extern bool save_cur_health_to_record(health_record_t *health_data);
 extern bool save_cur_sport_to_record(sport_record_t *sport_data);
 
+extern bool get_cur_local_from_record(local_record_t *local_data);
 extern bool get_cur_health_from_record(health_record_t *health_data);
 extern bool get_cur_sport_from_record(sport_record_t *sport_data);
 
+extern bool save_local_to_record(local_record_t *local_data);
 extern bool save_health_to_record(health_record_t *health_data);
 extern bool save_sport_to_record(sport_record_t *sport_data);
 
+extern bool get_local_from_record(local_record_t *local_data, uint32_t index);
 extern bool get_health_from_record(health_record_t *health_data, uint32_t index);
 extern bool get_sport_from_record(sport_record_t *sport_data, uint32_t index);
 
 extern bool get_last_sport_from_record(sport_record_t *sport_data);
 extern bool get_last_health_from_record(health_record_t *health_data);
+extern bool get_last_local_from_record(local_record_t *local_data);
 
+extern bool get_local_from_record_by_time(local_record_t *local_data, ENUM_RECORD_LOCATION_TYPE type, sys_date_timer_t begin_time, uint32_t index);
 extern bool get_health_from_record_by_time(health_record_t *health_data, ENUM_RECORD_HEALTH_TYPE type, sys_date_timer_t begin_time, uint32_t index);
 extern bool get_sport_from_record_by_time(sport_record_t *sport_data, ENUM_RECORD_SPORT_TYPE type, sys_date_timer_t begin_time, uint32_t index);
 

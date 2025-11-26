@@ -54,7 +54,6 @@ static int nvs_setup(void)
     struct device *flash_dev;
 	int err;	
 
-	//flash_dev = FLASH_AREA_DEVICE(STORAGE_NODE_LABEL);
 	fs.flash_device = NVS_PARTITION_DEVICE;
 	if(!device_is_ready(fs.flash_device))
 	{
@@ -237,6 +236,11 @@ bool clear_current_data_in_record(ENUM_RECORD_TYPE record_type)
 
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		addr_id = CUR_LOCAL_ID;
+		data_len = sizeof(local_record_t);
+		break;
+
 	case RECORD_TYPE_HEALTH:
 		addr_id = CUR_HEALTH_ID;
 		data_len = sizeof(health_record_t);
@@ -261,6 +265,11 @@ bool clear_current_data_in_record(ENUM_RECORD_TYPE record_type)
 	LOGD("save current %d_data success!", record_type);
 #endif
 	return true;	
+}
+
+void clear_cur_local_in_record(void)
+{
+	clear_current_data_in_record(RECORD_TYPE_LOCATION);
 }
 
 void clear_cur_health_in_record(void)
@@ -298,6 +307,11 @@ bool save_current_data_to_record(void *data, ENUM_RECORD_TYPE record_type)
 
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		addr_id = CUR_LOCAL_ID;
+		data_len = sizeof(local_record_t);
+		break;
+
 	case RECORD_TYPE_HEALTH:
 		addr_id = CUR_HEALTH_ID;
 		data_len = sizeof(health_record_t);
@@ -322,6 +336,11 @@ bool save_current_data_to_record(void *data, ENUM_RECORD_TYPE record_type)
 	LOGD("save current %d_data success!", record_type);
 #endif
 	return true;	
+}
+
+bool save_cur_local_to_record(local_record_t *local_data)
+{
+	return save_current_data_to_record(local_data, RECORD_TYPE_LOCATION);
 }
 
 bool save_cur_health_to_record(health_record_t *health_data)
@@ -357,6 +376,11 @@ bool get_current_data_from_record(void *data, ENUM_RECORD_TYPE record_type)
 	
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		addr_id = CUR_LOCAL_ID;
+		data_len = sizeof(local_record_t);
+		break;
+
 	case RECORD_TYPE_HEALTH:
 		addr_id = CUR_HEALTH_ID;
 		data_len = sizeof(health_record_t);
@@ -381,6 +405,11 @@ bool get_current_data_from_record(void *data, ENUM_RECORD_TYPE record_type)
 	LOGD("get current %d_data success!", record_type);
 #endif
 	return true;	
+}
+
+bool get_cur_local_from_record(local_record_t *local_data)
+{
+	return get_current_data_from_record(local_data, RECORD_TYPE_LOCATION);
 }
 
 bool get_cur_health_from_record(health_record_t *health_data)
@@ -419,6 +448,15 @@ bool save_data_to_record(void *data, ENUM_RECORD_TYPE record_type)
 	
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		index_addr_id = LOCAL_INDEX_ADDR_ID;
+		count_addr_id = LOCAL_COUNT_ADDR_ID;
+		index_begin = LOCAL_INDEX_BEGIN;
+		index_max = LOCAL_INDEX_MAX;
+		count_max = (LOCAL_INDEX_MAX-LOCAL_INDEX_BEGIN);
+		data_len = sizeof(local_record_t);
+		break;
+
 	case RECORD_TYPE_HEALTH:
 		index_addr_id = HEALTH_INDEX_ADDR_ID;
 		count_addr_id = HEALTH_COUNT_ADDR_ID;
@@ -492,6 +530,11 @@ bool save_data_to_record(void *data, ENUM_RECORD_TYPE record_type)
 	return true;	
 }
 
+bool save_local_to_record(local_record_t *local_data)
+{
+	return save_data_to_record(local_data, RECORD_TYPE_LOCATION);
+}
+
 bool save_health_to_record(health_record_t *health_data)
 {
 	return save_data_to_record(health_data, RECORD_TYPE_HEALTH);
@@ -527,6 +570,15 @@ bool clear_data_in_record(ENUM_RECORD_TYPE record_type)
 	
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		index_addr_id = LOCAL_INDEX_ADDR_ID;
+		count_addr_id = LOCAL_COUNT_ADDR_ID;
+		index_begin = LOCAL_INDEX_BEGIN;
+		index_max = LOCAL_INDEX_MAX;
+		count_max = (LOCAL_INDEX_MAX-LOCAL_INDEX_BEGIN);
+		data_len = sizeof(local_record_t);
+		break;
+
 	case RECORD_TYPE_HEALTH:
 		index_addr_id = HEALTH_INDEX_ADDR_ID;
 		count_addr_id = HEALTH_COUNT_ADDR_ID;
@@ -562,6 +614,11 @@ bool clear_data_in_record(ENUM_RECORD_TYPE record_type)
 		return false;
 
 	return true;	
+}
+
+void clear_local_in_record(void)
+{
+	clear_data_in_record(RECORD_TYPE_LOCATION);
 }
 
 void clear_health_in_record(void)
@@ -600,6 +657,15 @@ bool get_date_from_record(void *databuf, uint32_t index, ENUM_RECORD_TYPE record
 	
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		index_addr_id = LOCAL_INDEX_ADDR_ID;
+		count_addr_id = LOCAL_COUNT_ADDR_ID;
+		index_begin = LOCAL_INDEX_BEGIN;
+		index_max = LOCAL_INDEX_MAX;
+		count_max = (LOCAL_INDEX_MAX-LOCAL_INDEX_BEGIN);
+		data_len = sizeof(local_record_t);
+		break;
+		
 	case RECORD_TYPE_HEALTH:
 		index_addr_id = HEALTH_INDEX_ADDR_ID;
 		count_addr_id = HEALTH_COUNT_ADDR_ID;
@@ -664,6 +730,11 @@ bool get_date_from_record(void *databuf, uint32_t index, ENUM_RECORD_TYPE record
 	return true;
 }
 
+bool get_local_from_record(local_record_t *local_data, uint32_t index)
+{
+	return get_date_from_record(local_data, index, RECORD_TYPE_LOCATION);
+}
+
 bool get_health_from_record(health_record_t *health_data, uint32_t index)
 {
 	return get_date_from_record(health_data, index, RECORD_TYPE_HEALTH);
@@ -700,6 +771,15 @@ bool get_last_data_from_record(void *databuf, ENUM_RECORD_TYPE record_type)
 	
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		index_addr_id = LOCAL_INDEX_ADDR_ID;
+		count_addr_id = LOCAL_COUNT_ADDR_ID;
+		index_begin = LOCAL_INDEX_BEGIN;
+		index_max = LOCAL_INDEX_MAX;
+		count_max = (LOCAL_INDEX_MAX-LOCAL_INDEX_BEGIN);
+		data_len = sizeof(local_record_t);
+		break;
+		
 	case RECORD_TYPE_HEALTH:
 		index_addr_id = HEALTH_INDEX_ADDR_ID;
 		count_addr_id = HEALTH_COUNT_ADDR_ID;
@@ -740,6 +820,11 @@ bool get_last_data_from_record(void *databuf, ENUM_RECORD_TYPE record_type)
 	return true;	
 }
 
+bool get_last_local_from_record(local_record_t *local_data)  
+{
+	return get_last_data_from_record(local_data, RECORD_TYPE_LOCATION);
+}
+
 bool get_last_health_from_record(health_record_t *health_data)
 {
 	return get_last_data_from_record(health_data, RECORD_TYPE_HEALTH);
@@ -774,6 +859,15 @@ bool get_data_from_record_by_time_and_index(void *databuf, uint8_t data_type, sy
 	
 	switch(record_type)
 	{
+	case RECORD_TYPE_LOCATION:
+		index_addr_id = LOCAL_INDEX_ADDR_ID;
+		count_addr_id = LOCAL_COUNT_ADDR_ID;
+		index_begin = LOCAL_INDEX_BEGIN;
+		index_max = LOCAL_INDEX_MAX;
+		count_max = (LOCAL_INDEX_MAX-LOCAL_INDEX_BEGIN);
+		data_len = sizeof(local_record_t);
+		break;
+		
 	case RECORD_TYPE_HEALTH:
 		index_addr_id = HEALTH_INDEX_ADDR_ID;
 		count_addr_id = HEALTH_COUNT_ADDR_ID;
@@ -827,6 +921,22 @@ bool get_data_from_record_by_time_and_index(void *databuf, uint8_t data_type, sy
 
 			switch(record_type)
 			{
+			case RECORD_TYPE_LOCATION:
+				{
+					local_record_t* local_data;
+
+					local_data = (local_record_t*)databuf;
+					switch(data_type)
+					{
+					case RECORD_LOCATION_WIFI:
+					#ifdef CONFIG_WIFI_SUPPORT	
+						p_time = (sys_date_timer_t*)&(local_data->wifi_rec.timestamp);
+					#endif
+						break;
+					}
+				}
+				break;
+				
 			case RECORD_TYPE_HEALTH:
 				{
 					health_record_t* health_data;
@@ -947,6 +1057,22 @@ bool get_data_from_record_by_time_and_index(void *databuf, uint8_t data_type, sy
 
 			switch(record_type)
 			{
+			case RECORD_TYPE_LOCATION:
+				{
+					local_record_t* local_data;
+
+					local_data = (local_record_t*)databuf;
+					switch(data_type)
+					{
+					case RECORD_LOCATION_WIFI:
+					#ifdef CONFIG_WIFI_SUPPORT	
+						p_time = (sys_date_timer_t*)&(local_data->wifi_rec.timestamp);
+					#endif
+						break;
+					}
+				}
+				break;
+				
 			case RECORD_TYPE_HEALTH:
 				{
 					health_record_t* health_data;
@@ -1045,6 +1171,11 @@ bool get_data_from_record_by_time_and_index(void *databuf, uint8_t data_type, sy
 	}
 
 	return true;	
+}
+
+bool get_local_from_record_by_time(local_record_t *local_data, ENUM_RECORD_LOCATION_TYPE type, sys_date_timer_t begin_time, uint32_t index)
+{
+	return get_data_from_record_by_time_and_index(local_data, type, begin_time, index, RECORD_TYPE_LOCATION);
 }
 
 bool get_health_from_record_by_time(health_record_t *health_data, ENUM_RECORD_HEALTH_TYPE type, sys_date_timer_t begin_time, uint32_t index)

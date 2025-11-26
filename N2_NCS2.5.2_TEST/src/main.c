@@ -14,48 +14,39 @@
 #include <dk_buttons_and_leds.h>
 #include "datetime.h"
 #include "inner_flash.h"
-#include "external_flash.h"
-#include "uart_ble.h"
+#include "uart.h"
 #include "settings.h"
-#include "pmu.h"
 #include "codetrans.h"
 #ifdef CONFIG_WATCHDOG
 #include "watchdog.h"
 #endif
+#ifdef CONFIG_WIFI_SUPPORT
+#include "esp8266.h"
+#endif/*CONFIG_WIFI_SUPPORT*/
 #include "logger.h"
 
 static bool sys_pwron_completed_flag = false;
 
-static void modem_init(void)
-{
-	//nrf_modem_lib_init(NORMAL_MODE);
-	//boot_write_img_confirmed();
-}
-
 void system_init(void)
 {
-	k_sleep(K_MSEC(500));//xb test 2022-03-11 启动时候延迟0.5S,等待其他外设完全启动
-
-	modem_init();
-
 	InitSystemSettings();
 
-#ifdef CONFIG_PPG_SUPPORT
-	//PPG_i2c_off();
-#endif
-	pmu_init();
-	key_init();
-	LCD_Init();
-	//flash_init();
-	
+	uart_init();
 #ifdef CONFIG_PPG_SUPPORT	
-	//PPG_init();
+	PPG_init();
 #endif
 #ifdef CONFIG_ECG_SUPPORT
-	//ECG_init();
+	ECG_init();
 #endif
-	//ble_init();
-	//LogInit();
+#ifdef CONFIG_WIFI_SUPPORT
+	wifi_init();
+#endif
+#ifdef CONFIG_BLE_SUPPORT
+	BLE_init();
+#endif
+#ifdef CONFIG_AUDIO_SUPPORT
+	audio_init();
+#endif
 }
 
 void work_init(void)
@@ -113,21 +104,30 @@ int main(void)
 
 	while(1)
 	{
-		KeyMsgProcess();
 		TimeMsgProcess();
-		PMUMsgProcess();
 	#ifdef CONFIG_PPG_SUPPORT	
 		PPGMsgProcess();
 	#endif
 	#ifdef CONFIG_ECG_SUPPORT
 		ECGMsgProcess();
 	#endif
+	#ifdef CONFIG_BLE_SUPPORT
+		BLEMsgProcess();
+	#endif
 		SettingsMsgPorcess();
+	#ifdef CONFIG_WIFI_SUPPORT
+		WifiMsgProcess();
+	#endif
 		UartMsgProc();
+	#ifdef CONFIG_AUDIO_SUPPORT
+		AudioMsgProcess();
+	#endif
+	#ifdef CONFIG_TEMP_SUPPORT
+		TempMsgProcess();
+	#endif
 	#ifdef CONFIG_FACTORY_TEST_SUPPORT
 		FactoryTestProccess();
 	#endif
-		LogMsgProcess();
 		system_init_completed();
 		k_cpu_idle();
 	}

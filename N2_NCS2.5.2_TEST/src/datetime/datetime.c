@@ -13,11 +13,10 @@
 #include <stdio.h>
 #include "datetime.h"
 #include "settings.h"
-#include "max20353.h"
 #ifdef CONFIG_PPG_SUPPORT
 #include "max32674.h"
 #endif
-#include "uart_ble.h"
+#include "uart.h"
 #include "ucs2.h"
 #include "logger.h"
 
@@ -502,58 +501,16 @@ void UpdateSystemTime(void)
 	{
 		SaveSystemDateTime();
 		date_time_changed = date_time_changed&0xFD;
-
-	#if !defined(NB_SIGNAL_TEST)&&!defined(CONFIG_FACTORY_TEST_SUPPORT)
-		if(1
-		  #ifdef CONFIG_FOTA_DOWNLOAD
-			&& (!fota_is_running())
-		  #endif/*CONFIG_FOTA_DOWNLOAD*/
-		  #ifdef CONFIG_DATA_DOWNLOAD_SUPPORT
-			&& (!dl_is_running())
-		  #endif/*CONFIG_DATA_DOWNLOAD_SUPPORT*/
-		  #ifdef CONFIG_FACTORY_TEST_SUPPORT
-			&& (!FactryTestActived())
-		  #endif/*CONFIG_FACTORY_TEST_SUPPORT*/
-		)
-		{
-		#ifdef CONFIG_ALARM_SUPPORT	
-			AlarmRemindCheck(date_time);
-		#endif
-			//TimeCheckSendLocationData();
-		}
-	#endif
-
-		pmu_status_update();
 	}
 
 	if((date_time_changed&0x04) != 0)
 	{		
 		date_time_changed = date_time_changed&0xFB;
-
-	#if !defined(NB_SIGNAL_TEST)&&!defined(CONFIG_FACTORY_TEST_SUPPORT)
-	 #ifdef CONFIG_IMU_SUPPORT
-	  #ifdef CONFIG_STEP_SUPPORT
-		save_step_data_flag = true;
-	  #endif
-	  #ifdef CONFIG_SLEEP_SUPPORT
-		save_sleep_data_flag = true;
-	  	if(date_time.hour == SLEEP_TIME_START)
-	  	{
-	  		reset_sleep_data = true;
-	  	}
-	  #endif
-	 #endif
-	#endif
 	}
 
 	if((date_time_changed&0x08) != 0)
 	{
 		date_time_changed = date_time_changed&0xF7;
-
-	#if defined(CONFIG_IMU_SUPPORT)&&defined(CONFIG_STEP_SUPPORT)
-		g_steps = 0;
-		reset_steps = true;
-	#endif
 	}
 }
 
@@ -604,89 +561,6 @@ void GetSystemTimeSecString(uint8_t *str_utc)
 						date_time.hour,
 						date_time.minute,
 						date_time.second);
-}
-
-void GetSystemDateStrings(uint8_t *str_date)
-{
-	uint8_t tmpbuf[128] = {0};
-	
-	switch(global_settings.date_format)
-	{
-	case DATE_FORMAT_YYYYMMDD:
-		sprintf((char*)str_date, "%04d/%02d/%02d", date_time.year, date_time.month, date_time.day);
-		break;
-	case DATE_FORMAT_MMDDYYYY:
-		sprintf((char*)str_date, "%02d/%02d/%04d", date_time.month, date_time.day, date_time.year);
-		break;
-	case DATE_FORMAT_DDMMYYYY:
-		sprintf((char*)str_date, "%02d/%02d/%04d", date_time.day, date_time.month, date_time.year);
-		break;
-	}
-
-#ifdef FONTMAKER_UNICODE_FONT
-	strcpy(tmpbuf, str_date);
-	mmi_asc_to_ucs2(str_date, tmpbuf);
-#endif
-}
-
-void GetSysteAmPmStrings(uint8_t *str_ampm)
-{
-	uint8_t flag = 0;
-	uint8_t *am_pm[2] = {"am", "pm"};
-	uint8_t tmpbuf[128] = {0};
-
-	if(date_time.hour > 12)
-		flag = 1;
-	
-	switch(global_settings.time_format)
-	{
-	case TIME_FORMAT_24:
-		sprintf((char*)str_ampm, "  ");
-		break;
-	case TIME_FORMAT_12:
-		sprintf((char*)str_ampm, "%s", am_pm[flag]);
-		break;
-	}
-
-#ifdef FONTMAKER_UNICODE_FONT
-	strcpy(tmpbuf, str_ampm);
-	mmi_asc_to_ucs2(str_ampm, tmpbuf);
-#endif
-
-}
-
-void GetSystemTimeStrings(uint8_t *str_time)
-{
-	uint8_t tmpbuf[128] = {0};
-	
-	switch(global_settings.time_format)
-	{
-	case TIME_FORMAT_24:
-		sprintf((char*)str_time, "%02d:%02d:%02d", date_time.hour, date_time.minute, date_time.second);
-		break;
-	case TIME_FORMAT_12:
-		sprintf((char*)str_time, "%02d:%02d:%02d", (date_time.hour>12 ? (date_time.hour-12):date_time.hour), date_time.minute, date_time.second);
-		break;
-	}
-}
-
-void GetSystemWeekStrings(uint8_t *str_week)
-{
-	uint8_t *week_en[7] = {"Sun","Mon","Tue","Wed","Thu","Fri","Sat"};
-	uint8_t *week_chn[7] = {"日", "一", "二", "三", "四", "五", "六"};
-	uint8_t tmpbuf[128] = {0};
-
-	switch(global_settings.language)
-	{
-	#ifdef FW_FOR_CN
-	case LANGUAGE_CHN:
-		strcpy((char*)str_week, (const char*)week_chn[date_time.week]);
-		break;
-	#endif
-	case LANGUAGE_EN:
-		strcpy((char*)str_week, (const char*)week_en[date_time.week]);
-		break;
-	}
 }
 
 void TimeMsgProcess(void)

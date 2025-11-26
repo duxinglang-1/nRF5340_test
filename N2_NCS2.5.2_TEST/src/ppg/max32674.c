@@ -16,13 +16,14 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/i2c.h>
 #include <nrfx.h>
-#include "uart_ble.h"
+#include "uart.h"
 #include "Max32674.h"
-#include "screen.h"
 #include "max_sh_interface.h"
 #include "max_sh_api.h"
 #include "inner_flash.h"
-#include "external_flash.h"
+#ifdef CONFIG_BLE_SUPPORT
+#include "ble.h"
+#endif
 #include "logger.h"
 
 //#define PPG_DEBUG
@@ -32,6 +33,7 @@
 #define PPG_SPO2_COUNT_MAX		3
 #define PPG_SPO2_DEL_MIN_NUM	1
 #define PPG_SCC_COUNT_MAX		5
+#define NOTIFY_TIMER_INTERVAL	5
 
 bool ppg_int_event = false;
 bool ppg_bpt_is_calbraed = false;
@@ -52,7 +54,6 @@ static bool ppg_start_flag = false;
 static bool ppg_test_flag = false;
 static bool ppg_stop_flag = false;
 static bool ppg_get_data_flag = false;
-static bool ppg_redraw_data_flag = false;
 static bool ppg_get_cal_flag = false;
 static bool ppg_stop_cal_flag = false;
 static bool menu_start_hr = false;
@@ -75,10 +76,13 @@ uint8_t g_ppg_ver[64] = {0};
 
 uint8_t g_hr = 0;
 uint8_t g_hr_menu = 0;
+uint8_t g_hr_hourly = 0;
 uint8_t g_spo2 = 0;
 uint8_t g_spo2_menu = 0;
+uint8_t g_spo2_hourly = 0;
 bpt_data g_bpt = {0};
 bpt_data g_bpt_menu = {0};
+bpt_data g_bpt_hourly = {0};
 
 static uint8_t scc_check_sum = 0;
 static uint8_t SCC_COMPARE_MAX = PPG_SCC_COUNT_MAX;
@@ -87,35 +91,6 @@ static uint8_t temp_hr_count = 0;
 static uint8_t temp_spo2_count = 0;
 static uint8_t temp_hr[PPG_HR_COUNT_MAX] = {0};
 static uint8_t temp_spo2[PPG_SPO2_COUNT_MAX] = {0};
-static uint8_t rec2buf[PPG_BPT_REC2_DATA_SIZE] = {0};
-static uint8_t databuf[PPG_BPT_REC2_DATA_SIZE] = {0};
-
-static uint16_t str_timing_note[LANGUAGE_MAX][90] = {
-													#ifndef FW_FOR_CN
-														{0x0054,0x0068,0x0065,0x0020,0x0074,0x0069,0x006D,0x0069,0x006E,0x0067,0x0020,0x006D,0x0065,0x0061,0x0073,0x0075,0x0072,0x0065,0x006D,0x0065,0x006E,0x0074,0x0020,0x0069,0x0073,0x0020,0x0061,0x0062,0x006F,0x0075,0x0074,0x0020,0x0074,0x006F,0x0020,0x0073,0x0074,0x0061,0x0072,0x0074,0x002C,0x0020,0x0061,0x006E,0x0064,0x0020,0x0074,0x0068,0x0069,0x0073,0x0020,0x006D,0x0065,0x0061,0x0073,0x0075,0x0072,0x0065,0x006D,0x0065,0x006E,0x0074,0x0020,0x0069,0x0073,0x0020,0x006F,0x0076,0x0065,0x0072,0x0021,0x0000},//The timing measurement is about to start, and this measurement is over!
-														{0x0044,0x0069,0x0065,0x0020,0x005A,0x0065,0x0069,0x0074,0x006D,0x0065,0x0073,0x0073,0x0075,0x006E,0x0067,0x0020,0x0073,0x0074,0x0061,0x0072,0x0074,0x0065,0x0074,0x0020,0x006B,0x0075,0x0072,0x007A,0x0020,0x0076,0x006F,0x0072,0x0020,0x0064,0x0065,0x006D,0x0020,0x0053,0x0074,0x0061,0x0072,0x0074,0x0020,0x0075,0x006E,0x0064,0x0020,0x0064,0x0069,0x0065,0x0073,0x0065,0x0020,0x004D,0x0065,0x0073,0x0073,0x0075,0x006E,0x0067,0x0020,0x0069,0x0073,0x0074,0x0020,0x0076,0x006F,0x0072,0x0062,0x0065,0x0069,0x0021,0x0000},//Die Zeitmessung startet kurz vor dem Start und diese Messung ist vorbei!
-														{0x004C,0x0061,0x0020,0x006D,0x0065,0x0073,0x0075,0x0072,0x0065,0x0020,0x0064,0x0075,0x0020,0x0073,0x0079,0x006E,0x0063,0x0068,0x0072,0x006F,0x006E,0x0069,0x0073,0x0061,0x0074,0x0069,0x006F,0x006E,0x0020,0x0065,0x0073,0x0074,0x0020,0x0073,0x0075,0x0072,0x0020,0x006C,0x0065,0x0020,0x0070,0x006F,0x0069,0x006E,0x0074,0x0020,0x0064,0x0065,0x0020,0x0063,0x006F,0x006D,0x006D,0x0065,0x006E,0x0063,0x0065,0x0072,0x002C,0x0020,0x0065,0x0074,0x0020,0x0063,0x0065,0x0074,0x0074,0x0065,0x0020,0x006D,0x0065,0x0073,0x0075,0x0072,0x0065,0x0020,0x0065,0x0073,0x0074,0x0020,0x0074,0x0065,0x0072,0x006D,0x0069,0x006E,0x00E9,0x0065,0x0021,0x0000},//La mesure du synchronisation est sur le point de commencer, et cette mesure est terminée!
-														{0x004C,0x0061,0x0020,0x006D,0x0069,0x0073,0x0075,0x0072,0x0061,0x007A,0x0069,0x006F,0x006E,0x0065,0x0020,0x0064,0x0065,0x0069,0x0020,0x0074,0x0065,0x006D,0x0070,0x0069,0x0020,0x0073,0x0074,0x0061,0x0020,0x0070,0x0065,0x0072,0x0020,0x0069,0x006E,0x0069,0x007A,0x0069,0x0061,0x0072,0x0065,0x0020,0x0065,0x0020,0x0071,0x0075,0x0065,0x0073,0x0074,0x0061,0x0020,0x006D,0x0069,0x0073,0x0075,0x0072,0x0061,0x007A,0x0069,0x006F,0x006E,0x0065,0x0020,0x00E8,0x0020,0x0066,0x0069,0x006E,0x0069,0x0074,0x0061,0x0021,0x0000},//La misurazione dei tempi sta per iniziare e questa misurazione è finita!
-														{0x004C,0x0061,0x0020,0x006D,0x0065,0x0064,0x0069,0x0063,0x0069,0x00F3,0x006E,0x0020,0x0064,0x0065,0x0020,0x0074,0x0069,0x0065,0x006D,0x0070,0x006F,0x0020,0x0065,0x0073,0x0074,0x00E1,0x0020,0x0061,0x0020,0x0070,0x0075,0x006E,0x0074,0x006F,0x0020,0x0064,0x0065,0x0020,0x0063,0x006F,0x006D,0x0065,0x006E,0x007A,0x0061,0x0072,0x002C,0x0020,0x00A1,0x0079,0x0020,0x0065,0x0073,0x0074,0x0061,0x0020,0x006D,0x0065,0x0064,0x0069,0x0063,0x0069,0x00F3,0x006E,0x0020,0x0068,0x0061,0x0020,0x0074,0x0065,0x0072,0x006D,0x0069,0x006E,0x0061,0x0064,0x006F,0x0021,0x0000},//La medición de tiempo está a punto de comenzar, ?y esta medición ha terminado!
-														{0x0041,0x0020,0x006D,0x0065,0x0064,0x0069,0x00E7,0x00E3,0x006F,0x0020,0x0064,0x0065,0x0020,0x0074,0x0065,0x006D,0x0070,0x006F,0x0020,0x0065,0x0073,0x0074,0x00E1,0x0020,0x0070,0x0072,0x0065,0x0073,0x0074,0x0065,0x0073,0x0020,0x0061,0x0020,0x0063,0x006F,0x006D,0x0065,0x00E7,0x0061,0x0072,0x002C,0x0020,0x0065,0x0020,0x0065,0x0073,0x0073,0x0061,0x0020,0x006D,0x0065,0x0064,0x0069,0x00E7,0x00E3,0x006F,0x0020,0x0061,0x0063,0x0061,0x0062,0x006F,0x0075,0x0021,0x0000},//A medi??o de tempo está prestes a come?ar, e essa medi??o acabou!
-													#else
-														{0x5B9A,0x65F6,0x6D4B,0x91CF,0x5373,0x5C06,0x5F00,0x59CB,0xFF0C,0x672C,0x6B21,0x6D4B,0x91CF,0x7ED3,0x675F,0xFF01,0x0000},//定时测量即将开始，本次测量结束！
-														{0x0054,0x0068,0x0065,0x0020,0x0074,0x0069,0x006D,0x0069,0x006E,0x0067,0x0020,0x006D,0x0065,0x0061,0x0073,0x0075,0x0072,0x0065,0x006D,0x0065,0x006E,0x0074,0x0020,0x0069,0x0073,0x0020,0x0061,0x0062,0x006F,0x0075,0x0074,0x0020,0x0074,0x006F,0x0020,0x0073,0x0074,0x0061,0x0072,0x0074,0x002C,0x0020,0x0061,0x006E,0x0064,0x0020,0x0074,0x0068,0x0069,0x0073,0x0020,0x006D,0x0065,0x0061,0x0073,0x0075,0x0072,0x0065,0x006D,0x0065,0x006E,0x0074,0x0020,0x0069,0x0073,0x0020,0x006F,0x0076,0x0065,0x0072,0x0021,0x0000},//The timing measurement is about to start, and this measurement is over!
-													#endif
-													};
-static uint16_t str_running_note[LANGUAGE_MAX][70] = {
-													#ifndef FW_FOR_CN
-														{0x0054,0x0068,0x0065,0x0020,0x0073,0x0065,0x006E,0x0073,0x006F,0x0072,0x0020,0x0069,0x0073,0x0020,0x0072,0x0075,0x006E,0x006E,0x0069,0x006E,0x0067,0x002C,0x0020,0x0070,0x006C,0x0065,0x0061,0x0073,0x0065,0x0020,0x0074,0x0072,0x0079,0x0020,0x0061,0x0067,0x0061,0x0069,0x006E,0x0020,0x006C,0x0061,0x0074,0x0065,0x0072,0x0021,0x0000},//The sensor is running, please try again later!
-														{0x0044,0x0065,0x0072,0x0020,0x0053,0x0065,0x006E,0x0073,0x006F,0x0072,0x0020,0x006C,0x00E4,0x0075,0x0066,0x0074,0x002C,0x0020,0x0062,0x0069,0x0074,0x0074,0x0065,0x0020,0x0076,0x0065,0x0072,0x0073,0x0075,0x0063,0x0068,0x0065,0x006E,0x0020,0x0053,0x0069,0x0065,0x0020,0x0065,0x0073,0x0020,0x0073,0x0070,0x00E4,0x0074,0x0065,0x0072,0x0020,0x0065,0x0072,0x006E,0x0065,0x0075,0x0074,0x0021,0x0000},//Der Sensor l?uft, bitte versuchen Sie es sp?ter erneut!
-														{0x004C,0x0065,0x0020,0x0063,0x0061,0x0070,0x0074,0x0065,0x0075,0x0072,0x0020,0x0065,0x0073,0x0074,0x0020,0x0065,0x006E,0x0020,0x0063,0x006F,0x0075,0x0072,0x0073,0x0020,0x0064,0x0027,0x0065,0x0078,0x00E9,0x0063,0x0075,0x0074,0x0069,0x006F,0x006E,0x002C,0x0020,0x0076,0x0065,0x0075,0x0069,0x006C,0x006C,0x0065,0x007A,0x0020,0x0072,0x00E9,0x0065,0x0073,0x0073,0x0061,0x0079,0x0065,0x0072,0x0020,0x0070,0x006C,0x0075,0x0073,0x0020,0x0074,0x0061,0x0072,0x0064,0x0021,0x0000},//Le capteur est en cours d'exécution, veuillez réessayer plus tard!
-														{0x0049,0x006C,0x0020,0x0073,0x0065,0x006E,0x0073,0x006F,0x0072,0x0065,0x0020,0x00E8,0x0020,0x0069,0x006E,0x0020,0x0065,0x0073,0x0065,0x0063,0x0075,0x007A,0x0069,0x006F,0x006E,0x0065,0x002C,0x0020,0x0072,0x0069,0x0070,0x0072,0x006F,0x0076,0x0061,0x0020,0x0070,0x0069,0x00F9,0x0020,0x0074,0x0061,0x0072,0x0064,0x0069,0x0021,0x0000},//Il sensore è in esecuzione, riprova più tardi!
-														{0x0045,0x006C,0x0020,0x0073,0x0065,0x006E,0x0073,0x006F,0x0072,0x0020,0x0073,0x0065,0x0020,0x0065,0x0073,0x0074,0x00E1,0x0020,0x0065,0x006A,0x0065,0x0063,0x0075,0x0074,0x0061,0x006E,0x0064,0x006F,0x002C,0x0020,0x00A1,0x0069,0x006E,0x0074,0x00E9,0x006E,0x0074,0x0065,0x006C,0x006F,0x0020,0x0064,0x0065,0x0020,0x006E,0x0075,0x0065,0x0076,0x006F,0x0020,0x006D,0x00E1,0x0073,0x0020,0x0074,0x0061,0x0072,0x0064,0x0065,0x0021,0x0000},//El sensor se está ejecutando, ?inténtelo de nuevo más tarde!
-														{0x004F,0x0020,0x0073,0x0065,0x006E,0x0073,0x006F,0x0072,0x0020,0x0065,0x0073,0x0074,0x00E1,0x0020,0x0066,0x0075,0x006E,0x0063,0x0069,0x006F,0x006E,0x0061,0x006E,0x0064,0x006F,0x002C,0x0020,0x0074,0x0065,0x006E,0x0074,0x0065,0x0020,0x006E,0x006F,0x0076,0x0061,0x006D,0x0065,0x006E,0x0074,0x0065,0x0020,0x006D,0x0061,0x0069,0x0073,0x0020,0x0074,0x0061,0x0072,0x0064,0x0065,0x0021,0x0000},//O sensor está funcionando, tente novamente mais tarde!
-													#else
-														{0x4F20,0x611F,0x5668,0x6B63,0x5728,0x8FD0,0x884C,0xFF0C,0x8BF7,0x7A0D,0x540E,0x518D,0x8BD5,0xFF01,0x0000},//传感器正在运行，请稍后再试！
-														{0x0054,0x0068,0x0065,0x0020,0x0073,0x0065,0x006E,0x0073,0x006F,0x0072,0x0020,0x0069,0x0073,0x0020,0x0072,0x0075,0x006E,0x006E,0x0069,0x006E,0x0067,0x002C,0x0020,0x0070,0x006C,0x0065,0x0061,0x0073,0x0065,0x0020,0x0074,0x0072,0x0079,0x0020,0x0061,0x0067,0x0061,0x0069,0x006E,0x0020,0x006C,0x0061,0x0074,0x0065,0x0072,0x0021,0x0000},//The sensor is running, please try again later!
-													#endif
-													};
 
 static void ppg_set_appmode_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(ppg_appmode_timer, ppg_set_appmode_timerout, NULL);
@@ -132,750 +107,100 @@ K_TIMER_DEFINE(ppg_bpt_est_start_timer, ppg_bpt_est_start_timerout, NULL);
 static void ppg_skin_check_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(ppg_skin_check_timer, ppg_skin_check_timerout, NULL);
 
-void ClearAllBptRecData(void)
+void UpdateLastPPGData(sys_date_timer_t time_stamp, PPG_DATA_TYPE type, void *data)
 {
-	memset(&g_bpt, 0, sizeof(bpt_data));
-	memset(&g_bpt_menu, 0, sizeof(bpt_data));	
-	memset(&rec2buf, 0xff, sizeof(rec2buf));
-	
-	SpiFlash_Write(rec2buf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-}
-
-void SetCurDayBptRecData(sys_date_timer_t time_stamp, bpt_data bpt)
-{
-	uint16_t i;
-	bpt_rec2_nod *p_bpt,tmp_bpt = {0};
-
-	tmp_bpt.year = time_stamp.year;
-	tmp_bpt.month = time_stamp.month;
-	tmp_bpt.day = time_stamp.day;
-	tmp_bpt.hour = time_stamp.hour;
-	tmp_bpt.min = time_stamp.minute;
-	memcpy(&tmp_bpt.bpt, &bpt, sizeof(bpt_data));
-
-	memset(&databuf, 0x00, sizeof(databuf));
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	
-	SpiFlash_Read(&rec2buf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-	p_bpt = (bpt_rec2_nod*)rec2buf;
-	if((p_bpt->year == 0xffff || p_bpt->year == 0x0000)
-		||(p_bpt->month == 0xff || p_bpt->month == 0x00)
-		||(p_bpt->day == 0xff || p_bpt->day == 0x00)
-		||(p_bpt->hour == 0xff || p_bpt->min == 0xff)
-		||((p_bpt->year == tmp_bpt.year)
-			&&(p_bpt->month == tmp_bpt.month)
-			&&(p_bpt->day == tmp_bpt.day)
-			&&(p_bpt->hour == tmp_bpt.hour)
-			&&(p_bpt->min == tmp_bpt.min))
-		)
+	switch(type)
 	{
-		//直接覆盖写在第一条
-		memcpy(p_bpt, &tmp_bpt, sizeof(bpt_rec2_nod));
-		SpiFlash_Write(rec2buf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-	}
-	else if((tmp_bpt.year < p_bpt->year)
-			||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month < p_bpt->month))
-			||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day < p_bpt->day))
-			||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day == p_bpt->day)&&(tmp_bpt.hour < p_bpt->hour))
-			||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day == p_bpt->day)&&(tmp_bpt.hour == p_bpt->hour)&&(tmp_bpt.min < p_bpt->min))
-			)
-	{
-		//插入新的数据,旧的数据往后挪，丢掉最后一个
-		memcpy(&databuf[0*sizeof(bpt_rec2_nod)], &tmp_bpt, sizeof(bpt_rec2_nod));
-		memcpy(&databuf[1*sizeof(bpt_rec2_nod)], &rec2buf[0*sizeof(bpt_rec2_nod)], PPG_BPT_REC2_DATA_SIZE-sizeof(bpt_rec2_nod));
-		SpiFlash_Write(databuf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-	}
-	else
-	{
-		//寻找合适的插入位置
-		for(i=0;i<PPG_BPT_REC2_DATA_SIZE/(sizeof(bpt_rec2_nod));i++)
+	case PPG_DATA_HR:
 		{
-			p_bpt = rec2buf+i*sizeof(bpt_rec2_nod);
-			if((p_bpt->year == 0xffff || p_bpt->year == 0x0000)
-				||(p_bpt->month == 0xff || p_bpt->month == 0x00)
-				||(p_bpt->day == 0xff || p_bpt->day == 0x00)
-				||(p_bpt->hour == 0xff || p_bpt->min == 0xff)
-				||((p_bpt->year == tmp_bpt.year)
-					&&(p_bpt->month == tmp_bpt.month)
-					&&(p_bpt->day == tmp_bpt.day)
-					&&(p_bpt->hour == tmp_bpt.hour)
-					&&(p_bpt->min == tmp_bpt.min))
-				)
+			uint8_t *p_hr = data;
+			
+			memcpy(&last_health.hr_rec.timestamp, &time_stamp, sizeof(sys_date_timer_t));
+			last_health.hr_rec.hr = *p_hr;
+			if(*p_hr > last_health.hr_max)
 			{
-				//直接覆盖写
-				memcpy(p_bpt, &tmp_bpt, sizeof(bpt_rec2_nod));
-				SpiFlash_Write(rec2buf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-				return;
-			}
-			else if((tmp_bpt.year > p_bpt->year)
-					||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month > p_bpt->month))
-					||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day > p_bpt->day))
-					||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day == p_bpt->day)&&(tmp_bpt.hour > p_bpt->hour))
-					||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day == p_bpt->day)&&(tmp_bpt.hour == p_bpt->hour)&&(tmp_bpt.min > p_bpt->min))
-					)
-			{
-				if(i < (PPG_BPT_REC2_DATA_SIZE/sizeof(bpt_rec2_nod)-1))
+				if(last_health.hr_min == 0)
 				{
-					p_bpt++;
-					if((tmp_bpt.year < p_bpt->year)
-						||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month < p_bpt->month))
-						||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day < p_bpt->day))
-						||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day == p_bpt->day)&&(tmp_bpt.hour < p_bpt->hour))
-						||((tmp_bpt.year == p_bpt->year)&&(tmp_bpt.month == p_bpt->month)&&(tmp_bpt.day == p_bpt->day)&&(tmp_bpt.hour == p_bpt->hour)&&(tmp_bpt.min < p_bpt->min))
-						)
-					{
-						break;
-					}
+					if(last_health.hr_max > 0)
+						last_health.hr_min = last_health.hr_max;
+					else
+						last_health.hr_min = *p_hr;
 				}
+				last_health.hr_max = *p_hr;
+			}
+			else if(*p_hr < last_health.hr_min)
+			{
+				last_health.hr_min = *p_hr;
 			}
 		}
-
-		if(i < (PPG_BPT_REC2_DATA_SIZE/sizeof(bpt_rec2_nod)-1))
-		{
-			//找到位置，插入新数据，老数据整体往后挪，丢掉最后一个
-			memcpy(&databuf[0*sizeof(bpt_rec2_nod)], &rec2buf[0*sizeof(bpt_rec2_nod)], (i+1)*sizeof(bpt_rec2_nod));
-			memcpy(&databuf[(i+1)*sizeof(bpt_rec2_nod)], &tmp_bpt, sizeof(bpt_rec2_nod));
-			memcpy(&databuf[(i+2)*sizeof(bpt_rec2_nod)], &rec2buf[(i+1)*sizeof(bpt_rec2_nod)], PPG_BPT_REC2_DATA_SIZE-(i+1)*sizeof(bpt_rec2_nod));
-			SpiFlash_Write(databuf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-		}
-		else
-		{
-			//未找到位置，直接接在末尾，老数据整体往前移，丢掉最前一个
-			memcpy(&databuf[0*sizeof(bpt_rec2_nod)], &rec2buf[1*sizeof(bpt_rec2_nod)], PPG_BPT_REC2_DATA_SIZE-sizeof(bpt_rec2_nod));
-			memcpy(&databuf[PPG_BPT_REC2_DATA_SIZE-sizeof(bpt_rec2_nod)], &tmp_bpt, sizeof(bpt_rec2_nod));
-			SpiFlash_Write(databuf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-		}
-	}
-}
-
-void GetCurDayBptRecData(uint8_t *databuf)
-{
-	uint16_t i,j=0;
-	bpt_rec2_nod *p_bpt;
-	
-	if(databuf == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(&rec2buf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-	p_bpt = (bpt_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_BPT_REC2_DATA_SIZE/sizeof(bpt_rec2_nod);i++)
-	{
-		if((p_bpt->year == 0xffff || p_bpt->year == 0x0000)
-			||(p_bpt->month == 0xff || p_bpt->month == 0x00)
-			||(p_bpt->day == 0xff || p_bpt->day == 0x00)
-			||(p_bpt->hour == 0xff || p_bpt->min == 0xff)
-			)
-		{
-			break;
-		}
-		else if((p_bpt->year < date_time.year)
-			||((p_bpt->year == date_time.year)&&(p_bpt->month < date_time.month))
-			||((p_bpt->year == date_time.year)&&(p_bpt->month == date_time.month)&&(p_bpt->day < date_time.day))
-			)
-		{
-			p_bpt++;
-			continue;
-		}
-		else if((p_bpt->year > date_time.year)
-				||((p_bpt->year == date_time.year)&&(p_bpt->month > date_time.month))
-				||((p_bpt->year == date_time.year)&&(p_bpt->month == date_time.month)&&(p_bpt->day > date_time.day))
-				)
-		{
-			break;
-		}
-		else
-		{
-			memcpy(&databuf[j*sizeof(bpt_rec2_nod)], p_bpt, sizeof(bpt_rec2_nod));
-			j++;
-		}
+		break;
 		
-		p_bpt++;
-	}
-}
-
-void GetGivenDayBptRecData(sys_date_timer_t date, uint8_t *databuf)
-{
-	uint16_t i,j=0;
-	bpt_rec2_nod *p_bpt;
-
-	if(!CheckSystemDateTimeIsValid(date))
-		return;
-	if(databuf == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(&rec2buf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-	p_bpt = (bpt_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_BPT_REC2_DATA_SIZE/sizeof(bpt_rec2_nod);i++)
-	{
-		if((p_bpt->year == 0xffff || p_bpt->year == 0x0000)
-			||(p_bpt->month == 0xff || p_bpt->month == 0x00)
-			||(p_bpt->day == 0xff || p_bpt->day == 0x00)
-			||(p_bpt->hour == 0xff || p_bpt->min == 0xff)
-			)
+	case PPG_DATA_SPO2:
 		{
-			break;
-		}
-		else if((p_bpt->year < date.year)
-			||((p_bpt->year == date.year)&&(p_bpt->month < date.month))
-			||((p_bpt->year == date.year)&&(p_bpt->month == date.month)&&(p_bpt->day < date.day))
-			)
-		{
-			p_bpt++;
-			continue;
-		}
-		else if((p_bpt->year > date.year)
-				||((p_bpt->year == date.year)&&(p_bpt->month > date.month))
-				||((p_bpt->year == date.year)&&(p_bpt->month == date.month)&&(p_bpt->day > date.day))
-				)
-		{
-			break;
-		}
-		else
-		{
-			memcpy(&databuf[j*sizeof(bpt_rec2_nod)], p_bpt, sizeof(bpt_rec2_nod));
-			j++;
-		}
-
-		p_bpt++;
-	}
-}
-
-void GetGivenTimeBptRecData(sys_date_timer_t date, bpt_data *bpt)
-{
-	uint16_t i;
-	bpt_rec2_nod *p_bpt;
-
-	if(!CheckSystemDateTimeIsValid(date))
-		return;
-	if(bpt == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(rec2buf, PPG_BPT_REC2_DATA_ADDR, PPG_BPT_REC2_DATA_SIZE);
-	p_bpt = (bpt_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_BPT_REC2_DATA_SIZE/sizeof(bpt_rec2_nod);i++)
-	{
-		if((p_bpt->year == 0xffff || p_bpt->year == 0x0000)
-			||(p_bpt->month == 0xff || p_bpt->month == 0x00)
-			||(p_bpt->day == 0xff || p_bpt->day == 0x00)
-			||(p_bpt->hour == 0xff || p_bpt->min == 0xff)
-			)
-		{
-			break;
-		}
-		else if((p_bpt->year == date.year)
-				&&(p_bpt->month == date.month)
-				&&(p_bpt->day == date.day)
-				&&(p_bpt->hour == date.hour)
-				&&(p_bpt->min == date.minute)
-				)
-		{
-			memcpy(bpt, &p_bpt->bpt, sizeof(bpt_data));
-			break;
-		}
-
-		p_bpt++;
-	}
-}
-
-void ClearAllSpo2RecData(void)
-{
-	g_spo2 = 0;
-	g_spo2_menu = 0;
-	memset(&rec2buf, 0xff, sizeof(rec2buf));
-
-	SpiFlash_Write(rec2buf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-}
-
-void SetCurDaySpo2RecData(sys_date_timer_t time_stamp, uint8_t spo2)
-{
-	uint16_t i;
-	spo2_rec2_nod *p_spo2,tmp_spo2 = {0};
-	
-	tmp_spo2.year = time_stamp.year;
-	tmp_spo2.month = time_stamp.month;
-	tmp_spo2.day = time_stamp.day;
-	tmp_spo2.hour = time_stamp.hour;
-	tmp_spo2.min = time_stamp.minute;
-	tmp_spo2.spo2 = spo2;
-	
-	memset(&databuf, 0x00, sizeof(databuf));
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-
-	SpiFlash_Read(&rec2buf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-	p_spo2 = (spo2_rec2_nod*)&rec2buf;
-	if((p_spo2->year == 0xffff || p_spo2->year == 0x0000)
-		||(p_spo2->month == 0xff || p_spo2->month == 0x00)
-		||(p_spo2->day == 0xff || p_spo2->day == 0x00)
-		||(p_spo2->hour == 0xff || p_spo2->min == 0xff)
-		||((p_spo2->year == tmp_spo2.year)
-			&&(p_spo2->month == tmp_spo2.month)
-			&&(p_spo2->day == tmp_spo2.day)
-			&&(p_spo2->hour == tmp_spo2.hour)
-			&&(p_spo2->min == tmp_spo2.min))
-		)
-	{
-		//直接覆盖写在第一条
-		memcpy(p_spo2, &tmp_spo2, sizeof(spo2_rec2_nod));
-		SpiFlash_Write(rec2buf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-	}
-	else if((tmp_spo2.year < p_spo2->year)
-			||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month < p_spo2->month))
-			||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day < p_spo2->day))
-			||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day == p_spo2->day)&&(tmp_spo2.hour < p_spo2->hour))
-			||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day == p_spo2->day)&&(tmp_spo2.hour == p_spo2->hour)&&(tmp_spo2.min < p_spo2->min))
-			)
-	{
-		//插入新的数据,旧的数据往后挪，丢掉最后一个
-		memcpy(&databuf[0*sizeof(spo2_rec2_nod)], &tmp_spo2, sizeof(spo2_rec2_nod));
-		memcpy(&databuf[1*sizeof(spo2_rec2_nod)], &rec2buf[0*sizeof(spo2_rec2_nod)], PPG_SPO2_REC2_DATA_SIZE-sizeof(spo2_rec2_nod));
-		SpiFlash_Write(databuf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-	}
-	else
-	{
-		//寻找合适的插入位置
-		for(i=0;i<PPG_SPO2_REC2_DATA_SIZE/sizeof(spo2_rec2_nod);i++)
-		{
-			p_spo2 = rec2buf+i*sizeof(spo2_rec2_nod);
-			if((p_spo2->year == 0xffff || p_spo2->year == 0x0000)
-				||(p_spo2->month == 0xff || p_spo2->month == 0x00)
-				||(p_spo2->day == 0xff || p_spo2->day == 0x00)
-				||(p_spo2->hour == 0xff || p_spo2->min == 0xff)
-				||((p_spo2->year == tmp_spo2.year)
-					&&(p_spo2->month == tmp_spo2.month)
-					&&(p_spo2->day == tmp_spo2.day)
-					&&(p_spo2->hour == tmp_spo2.hour)
-					&&(p_spo2->min == tmp_spo2.min))
-				)
+			uint8_t *p_spo2 = data;
+			
+			memcpy(&last_health.spo2_rec.timestamp, &time_stamp, sizeof(sys_date_timer_t));
+			last_health.spo2_rec.spo2 = *p_spo2;
+			if(*p_spo2 > last_health.spo2_max)
 			{
-				//直接覆盖写
-				memcpy(p_spo2, &tmp_spo2, sizeof(spo2_rec2_nod));
-				SpiFlash_Write(rec2buf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-				return;
-			}
-			else if((tmp_spo2.year > p_spo2->year)
-					||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month > p_spo2->month))
-					||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day > p_spo2->day))
-					||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day == p_spo2->day)&&(tmp_spo2.hour > p_spo2->hour))
-					||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day == p_spo2->day)&&(tmp_spo2.hour == p_spo2->hour)&&(tmp_spo2.min > p_spo2->min))
-					)
-			{
-				if(i < (PPG_SPO2_REC2_DATA_SIZE/sizeof(spo2_rec2_nod)-1))
+				if(last_health.spo2_min == 0)
 				{
-					p_spo2++;
-					if((tmp_spo2.year < p_spo2->year)
-						||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month < p_spo2->month))
-						||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day < p_spo2->day))
-						||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day == p_spo2->day)&&(tmp_spo2.hour < p_spo2->hour))
-						||((tmp_spo2.year == p_spo2->year)&&(tmp_spo2.month == p_spo2->month)&&(tmp_spo2.day == p_spo2->day)&&(tmp_spo2.hour == p_spo2->hour)&&(tmp_spo2.min < p_spo2->min))
-						)
-					{
-						break;
-					}
+					if(last_health.spo2_max > 0)
+						last_health.spo2_min = last_health.spo2_max;
+					else
+						last_health.spo2_min = *p_spo2;
 				}
+				last_health.spo2_max = *p_spo2;
+			}
+			else if(*p_spo2 < last_health.spo2_min)
+			{
+				last_health.spo2_min = *p_spo2;
 			}
 		}
-
-		if(i < (PPG_SPO2_REC2_DATA_SIZE/sizeof(spo2_rec2_nod)-1))
-		{
-			//找到位置，插入新数据，老数据整体往后挪，丢掉最后一个
-			memcpy(&databuf[0*sizeof(spo2_rec2_nod)], &rec2buf[0*sizeof(spo2_rec2_nod)], (i+1)*sizeof(spo2_rec2_nod));
-			memcpy(&databuf[(i+1)*sizeof(spo2_rec2_nod)], &tmp_spo2, sizeof(spo2_rec2_nod));
-			memcpy(&databuf[(i+2)*sizeof(spo2_rec2_nod)], &rec2buf[(i+1)*sizeof(spo2_rec2_nod)], PPG_SPO2_REC2_DATA_SIZE-(i+1)*sizeof(spo2_rec2_nod));
-			SpiFlash_Write(databuf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-		}
-		else
-		{
-			//未找到位置，直接接在末尾，老数据整体往前移，丢掉最前一个
-			memcpy(&databuf[0*sizeof(spo2_rec2_nod)], &rec2buf[1*sizeof(spo2_rec2_nod)], PPG_SPO2_REC2_DATA_SIZE-sizeof(spo2_rec2_nod));
-			memcpy(&databuf[PPG_SPO2_REC2_DATA_SIZE-sizeof(spo2_rec2_nod)], &tmp_spo2, sizeof(spo2_rec2_nod));
-			SpiFlash_Write(databuf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-		}
-	}
-}
-
-void GetCurDaySpo2RecData(uint8_t *databuf)
-{
-	uint16_t i,j=0;
-	spo2_rec2_nod *p_spo2;
-	
-	if(databuf == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(rec2buf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-	p_spo2 = (spo2_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_SPO2_REC2_DATA_SIZE/sizeof(spo2_rec2_nod);i++)
-	{
-		if((p_spo2->year == 0xffff || p_spo2->year == 0x0000)
-			||(p_spo2->month == 0xff || p_spo2->month == 0x00)
-			||(p_spo2->day == 0xff || p_spo2->day == 0x00)
-			||(p_spo2->hour == 0xff || p_spo2->min == 0xff)
-			)
-		{
-			break;
-		}
-		else if((p_spo2->year < date_time.year)
-			||((p_spo2->year == date_time.year)&&(p_spo2->month < date_time.month))
-			||((p_spo2->year == date_time.year)&&(p_spo2->month == date_time.month)&&(p_spo2->day < date_time.day))
-			)
-		{
-			p_spo2++;
-			continue;
-		}
-		else if((p_spo2->year > date_time.year)
-				||((p_spo2->year == date_time.year)&&(p_spo2->month > date_time.month))
-				||((p_spo2->year == date_time.year)&&(p_spo2->month == date_time.month)&&(p_spo2->day > date_time.day))
-				)
-		{
-			break;
-		}
-		else
-		{
-			memcpy(&databuf[j*sizeof(spo2_rec2_nod)], p_spo2, sizeof(spo2_rec2_nod));
-			j++;
-		}
-
-		p_spo2++;
-	}
-}
-
-void GetGivenDaySpo2RecData(sys_date_timer_t date, uint8_t *databuf)
-{
-	uint16_t i,j=0;
-	spo2_rec2_nod *p_spo2;
-
-	if(!CheckSystemDateTimeIsValid(date))
-		return;
-	if(databuf == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(rec2buf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-	p_spo2 = (bpt_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_SPO2_REC2_DATA_SIZE/sizeof(spo2_rec2_nod);i++)
-	{
-		if((p_spo2->year == 0xffff || p_spo2->year == 0x0000)
-			||(p_spo2->month == 0xff || p_spo2->month == 0x00)
-			||(p_spo2->day == 0xff || p_spo2->day == 0x00)
-			||(p_spo2->hour == 0xff || p_spo2->min == 0xff)
-			)
-		{
-			break;
-		}
-		else if((p_spo2->year < date.year)
-			||((p_spo2->year == date.year)&&(p_spo2->month < date.month))
-			||((p_spo2->year == date.year)&&(p_spo2->month == date.month)&&(p_spo2->day < date.day))
-			)
-		{
-			p_spo2++;
-			continue;
-		}
-		else if((p_spo2->year > date.year)
-				||((p_spo2->year == date.year)&&(p_spo2->month > date.month))
-				||((p_spo2->year == date.year)&&(p_spo2->month == date.month)&&(p_spo2->day > date.day))
-				)
-		{
-			break;
-		}
-		else
-		{
-			memcpy(&databuf[j*sizeof(spo2_rec2_nod)], p_spo2, sizeof(spo2_rec2_nod));
-			j++;
-		}
-
-		p_spo2++;
-	}
-}
-
-void GetGivenTimeSpo2RecData(sys_date_timer_t date, uint8_t *spo2)
-{
-	uint16_t i;
-	spo2_rec2_nod *p_spo2;
-
-	if(!CheckSystemDateTimeIsValid(date))
-		return;
-	if(spo2 == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(rec2buf, PPG_SPO2_REC2_DATA_ADDR, PPG_SPO2_REC2_DATA_SIZE);
-	p_spo2 = (spo2_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_SPO2_REC2_DATA_SIZE/sizeof(spo2_rec2_nod);i++)
-	{
-		if((p_spo2->year == 0xffff || p_spo2->year == 0x0000)
-			||(p_spo2->month == 0xff || p_spo2->month == 0x00)
-			||(p_spo2->day == 0xff || p_spo2->day == 0x00)
-			||(p_spo2->hour == 0xff || p_spo2->min == 0xff)
-			)
-		{
-			break;
-		}
+		break;
 		
-		if((p_spo2->year == date.year)
-			&&(p_spo2->month == date.month)
-			&&(p_spo2->day == date.day)
-			&&(p_spo2->hour == date.hour)
-			&&(p_spo2->min == date.minute)
-			)
+	case PPG_DATA_BPT:
 		{
-			*spo2 = p_spo2->spo2;
-			break;
-		}
-
-		p_spo2++;
-	}
-}
-
-void ClearAllHrRecData(void)
-{
-	g_hr = 0;
-	g_hr_menu = 0;
-	memset(&rec2buf, 0xff, sizeof(rec2buf));
-
-	SpiFlash_Write(rec2buf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-}
-
-void SetCurDayHrRecData(sys_date_timer_t time_stamp, uint8_t hr)
-{
-	uint16_t i;
-	hr_rec2_nod *p_hr,tmp_hr = {0};
-	
-	tmp_hr.year = time_stamp.year;
-	tmp_hr.month = time_stamp.month;
-	tmp_hr.day = time_stamp.day;
-	tmp_hr.hour = time_stamp.hour;
-	tmp_hr.min = time_stamp.minute;
-	tmp_hr.hr = hr;
-
-	memset(&databuf, 0x00, sizeof(databuf));
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	
-	SpiFlash_Read(&rec2buf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-	p_hr = (hr_rec2_nod*)&rec2buf;
-	if((p_hr->year == 0xffff || p_hr->year == 0x0000)
-		||(p_hr->month == 0xff || p_hr->month == 0x00)
-		||(p_hr->day == 0xff || p_hr->day == 0x00)
-		||(p_hr->hour == 0xff || p_hr->min == 0xff)
-		||((p_hr->year == tmp_hr.year)
-			&&(p_hr->month == tmp_hr.month)
-			&&(p_hr->day == tmp_hr.day)
-			&&(p_hr->hour == tmp_hr.hour)
-			&&(p_hr->min == tmp_hr.min))
-		)
-	{
-		//直接覆盖写在第一条
-		memcpy(p_hr, &tmp_hr, sizeof(hr_rec2_nod));
-		SpiFlash_Write(rec2buf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-	}
-	else if((tmp_hr.year < p_hr->year)
-			||((tmp_hr.year == p_hr->year)&&(tmp_hr.month < p_hr->month))
-			||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day < p_hr->day))
-			||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day == p_hr->day)&&(tmp_hr.hour < p_hr->hour))
-			||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day == p_hr->day)&&(tmp_hr.hour == p_hr->hour)&&(tmp_hr.min < p_hr->min))
-			)
-	{
-		//插入新的数据,旧的数据往后挪，丢掉最后一个
-		memcpy(&databuf[0*sizeof(hr_rec2_nod)], &tmp_hr, sizeof(hr_rec2_nod));
-		memcpy(&databuf[1*sizeof(hr_rec2_nod)], &rec2buf[0*sizeof(hr_rec2_nod)], PPG_HR_REC2_DATA_SIZE-sizeof(hr_rec2_nod));
-		SpiFlash_Write(databuf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-	}
-	else
-	{
-		//寻找合适的插入位置
-		for(i=0;i<PPG_HR_REC2_DATA_SIZE/sizeof(hr_rec2_nod);i++)
-		{
-			p_hr = rec2buf+i*sizeof(hr_rec2_nod);
-			if((p_hr->year == 0xffff || p_hr->year == 0x0000)
-				||(p_hr->month == 0xff || p_hr->month == 0x00)
-				||(p_hr->day == 0xff || p_hr->day == 0x00)
-				||(p_hr->hour == 0xff || p_hr->min == 0xff)
-				||((p_hr->year == tmp_hr.year)
-					&&(p_hr->month == tmp_hr.month)
-					&&(p_hr->day == tmp_hr.day)
-					&&(p_hr->hour == tmp_hr.hour)
-					&&(p_hr->min == tmp_hr.min))
-				)
+			bpt_data *p_bpt = data;
+			
+			memcpy(&last_health.bpt_rec.timestamp, &date_time, sizeof(sys_date_timer_t));
+			memcpy(&last_health.bpt_rec.bpt, p_bpt, sizeof(bpt_data));
+			if(p_bpt->systolic > last_health.bpt_max.systolic)
 			{
-				//直接覆盖写
-				memcpy(p_hr, &tmp_hr, sizeof(hr_rec2_nod));
-				SpiFlash_Write(rec2buf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-				return;
-			}
-			else if((tmp_hr.year > p_hr->year)
-					||((tmp_hr.year == p_hr->year)&&(tmp_hr.month > p_hr->month))
-					||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day > p_hr->day))
-					||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day == p_hr->day)&&(tmp_hr.hour > p_hr->hour))
-					||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day == p_hr->day)&&(tmp_hr.hour == p_hr->hour)&&(tmp_hr.min > p_hr->min))
-					)
-			{
-				if(i < (PPG_HR_REC2_DATA_SIZE/sizeof(hr_rec2_nod)-1))
+				if(last_health.bpt_min.systolic == 0)
 				{
-					p_hr++;
-					if((tmp_hr.year < p_hr->year)
-						||((tmp_hr.year == p_hr->year)&&(tmp_hr.month < p_hr->month))
-						||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day < p_hr->day))
-						||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day == p_hr->day)&&(tmp_hr.hour < p_hr->hour))
-						||((tmp_hr.year == p_hr->year)&&(tmp_hr.month == p_hr->month)&&(tmp_hr.day == p_hr->day)&&(tmp_hr.hour == p_hr->hour)&&(tmp_hr.min < p_hr->min))
-						)
-					{
-						break;
-					}
+					if(last_health.bpt_max.systolic > 0)
+						last_health.bpt_min.systolic = last_health.bpt_max.systolic;
+					else
+						last_health.bpt_min.systolic = p_bpt->systolic;
 				}
+				last_health.bpt_max.systolic = p_bpt->systolic;
+			}
+			else if(p_bpt->systolic < last_health.bpt_min.systolic)
+			{
+				last_health.bpt_min.systolic = p_bpt->systolic;
+			}
+			
+			if(p_bpt->diastolic > last_health.bpt_max.diastolic)
+			{
+				if(last_health.bpt_min.diastolic == 0)
+				{
+					if(last_health.bpt_max.diastolic > 0)
+						last_health.bpt_min.diastolic = last_health.bpt_max.diastolic;
+					else
+						last_health.bpt_min.diastolic = p_bpt->diastolic;
+				}
+				last_health.bpt_max.diastolic = p_bpt->diastolic;
+			}
+			else if(p_bpt->diastolic < last_health.bpt_min.diastolic)
+			{
+				last_health.bpt_min.diastolic = p_bpt->diastolic;
 			}
 		}
-
-		if(i < (PPG_HR_REC2_DATA_SIZE/sizeof(hr_rec2_nod)-1))
-		{
-			//找到位置，插入新数据，老数据整体往后挪，丢掉最后一个
-			memcpy(&databuf[0*sizeof(hr_rec2_nod)], &rec2buf[0*sizeof(hr_rec2_nod)], (i+1)*sizeof(hr_rec2_nod));
-			memcpy(&databuf[(i+1)*sizeof(hr_rec2_nod)], &tmp_hr, sizeof(hr_rec2_nod));
-			memcpy(&databuf[(i+2)*sizeof(hr_rec2_nod)], &rec2buf[(i+1)*sizeof(hr_rec2_nod)], PPG_HR_REC2_DATA_SIZE-(i+1)*sizeof(hr_rec2_nod));
-			SpiFlash_Write(databuf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-		}
-		else
-		{
-			//未找到位置，直接接在末尾，老数据整体往前移，丢掉最前一个
-			memcpy(&databuf[0*sizeof(hr_rec2_nod)], &rec2buf[1*sizeof(hr_rec2_nod)], PPG_HR_REC2_DATA_SIZE-sizeof(hr_rec2_nod));
-			memcpy(&databuf[PPG_HR_REC2_DATA_SIZE-sizeof(hr_rec2_nod)], &tmp_hr, sizeof(hr_rec2_nod));
-			SpiFlash_Write(databuf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-		}
+		break;
 	}
-}
 
-void GetCurDayHrRecData(uint8_t *databuf)
-{
-	uint16_t i,j=0;
-	hr_rec2_nod *p_hr;
-	
-	if(databuf == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(rec2buf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-	p_hr = (hr_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_HR_REC2_DATA_SIZE/sizeof(hr_rec2_nod);i++)
-	{
-		if((p_hr->year == 0xffff || p_hr->year == 0x0000)
-			||(p_hr->month == 0xff || p_hr->month == 0x00)
-			||(p_hr->day == 0xff || p_hr->day == 0x00)
-			||(p_hr->hour == 0xff || p_hr->min == 0xff)
-			)
-		{
-			break;
-		}
-		else if((p_hr->year < date_time.year)
-			||((p_hr->year == date_time.year)&&(p_hr->month < date_time.month))
-			||((p_hr->year == date_time.year)&&(p_hr->month == date_time.month)&&(p_hr->day < date_time.day))
-			)
-		{
-			p_hr++;
-			continue;
-		}
-		else if((p_hr->year > date_time.year)
-				||((p_hr->year == date_time.year)&&(p_hr->month > date_time.month))
-				||((p_hr->year == date_time.year)&&(p_hr->month == date_time.month)&&(p_hr->day > date_time.day))
-				)
-		{
-			break;
-		}
-		else
-		{
-			memcpy(&databuf[j*sizeof(hr_rec2_nod)], p_hr, sizeof(hr_rec2_nod));
-			j++;
-		}
-
-		p_hr++;
-	}
-}
-
-void GetGivenDayHrRecData(sys_date_timer_t date, uint8_t *databuf)
-{
-	uint16_t i,j=0;
-	hr_rec2_nod *p_hr;
-
-	if(!CheckSystemDateTimeIsValid(date))
-		return;
-	if(databuf == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(rec2buf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-	p_hr = (hr_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_HR_REC2_DATA_SIZE/sizeof(hr_rec2_nod);i++)
-	{
-		if((p_hr->year == 0xffff || p_hr->year == 0x0000)
-			||(p_hr->month == 0xff || p_hr->month == 0x00)
-			||(p_hr->day == 0xff || p_hr->day == 0x00)
-			||(p_hr->hour == 0xff || p_hr->min == 0xff)
-			)
-		{
-			break;
-		}
-		else if((p_hr->year < date.year)
-			||((p_hr->year == date.year)&&(p_hr->month < date.month))
-			||((p_hr->year == date.year)&&(p_hr->month == date.month)&&(p_hr->day < date.day))
-			)
-		{
-			p_hr++;
-			continue;
-		}
-		else if((p_hr->year > date.year)
-				||((p_hr->year == date.year)&&(p_hr->month > date.month))
-				||((p_hr->year == date.year)&&(p_hr->month == date.month)&&(p_hr->day > date.day))
-				)
-		{
-			break;
-		}
-		else
-		{
-			memcpy(&databuf[j*sizeof(hr_rec2_nod)], p_hr, sizeof(hr_rec2_nod));
-			j++;
-		}
-
-		p_hr++;
-	}
-}
-
-void GetGivenTimeHrRecData(sys_date_timer_t date, uint8_t *hr)
-{
-	uint16_t i;
-	hr_rec2_nod *p_hr;
-
-	if(!CheckSystemDateTimeIsValid(date))
-		return;	
-	if(hr == NULL)
-		return;
-
-	memset(&rec2buf, 0x00, sizeof(rec2buf));
-	SpiFlash_Read(rec2buf, PPG_HR_REC2_DATA_ADDR, PPG_HR_REC2_DATA_SIZE);
-	p_hr = (hr_rec2_nod*)rec2buf;
-	for(i=0;i<PPG_SPO2_REC2_DATA_SIZE/sizeof(spo2_rec2_nod);i++)
-	{
-		if((p_hr->year == 0xffff || p_hr->year == 0x0000)
-			||(p_hr->month == 0xff || p_hr->month == 0x00)
-			||(p_hr->day == 0xff || p_hr->day == 0x00)
-			||(p_hr->hour == 0xff || p_hr->min == 0xff)
-			)
-		{
-			break;
-		}
-		
-		if((p_hr->year == date.year)
-			&&(p_hr->month == date.month)
-			&&(p_hr->day == date.day)
-			&&(p_hr->hour == date.hour)
-			&&(p_hr->min == date.minute)
-			)
-		{
-			*hr = p_hr->hr;
-			break;
-		}
-
-		p_hr++;
-	}
+	save_cur_health_to_record(&last_health);
 }
 
 void GetPPGData(uint8_t *hr, uint8_t *spo2, uint8_t *systolic, uint8_t *diastolic)
@@ -895,9 +220,9 @@ void GetPPGData(uint8_t *hr, uint8_t *spo2, uint8_t *systolic, uint8_t *diastoli
 
 bool IsInPPGScreen(void)
 {
-	if(screen_id == SCREEN_ID_HR || screen_id == SCREEN_ID_SPO2 || screen_id == SCREEN_ID_BP)
-		return true;
-	else
+	//if(screen_id == SCREEN_ID_HR || screen_id == SCREEN_ID_SPO2 || screen_id == SCREEN_ID_BP)
+	//	return true;
+	//else
 		return false;
 }
 
@@ -931,29 +256,6 @@ bool PPGIsWorking(void)
 		return false;
 	else
 		return true;
-}
-
-void PPGRedrawData(void)
-{
-	if(screen_id == SCREEN_ID_IDLE)
-	{
-		if(g_ppg_data == PPG_DATA_HR && get_hr_ok_flag)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_HR;
-		else if(g_ppg_data == PPG_DATA_SPO2 && get_spo2_ok_flag)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_SPO2;
-		scr_msg[screen_id].act = SCREEN_ACTION_UPDATE;
-	}
-	else if(screen_id == SCREEN_ID_HR || screen_id == SCREEN_ID_SPO2 || screen_id == SCREEN_ID_BP)
-	{
-		if(screen_id == SCREEN_ID_HR)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_HR;
-		else if(screen_id == SCREEN_ID_SPO2)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_SPO2;
-		else if(screen_id == SCREEN_ID_BP)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_BP;
-		
-		scr_msg[screen_id].act = SCREEN_ACTION_UPDATE;
-	}
 }
 
 void ppg_get_data_timerout(struct k_timer *timer_id)
@@ -1185,18 +487,6 @@ void PPGGetSensorHubData(void)
 	bpt_sensorhub_data bpt = {0};
 	accel_data accel = {0};
 	max86176_data max86176 = {0};
-	notify_infor infor = {0};
-#ifdef FONTMAKER_UNICODE_FONT
-    LCD_SetFontSize(FONT_SIZE_20);
-#else		
-    LCD_SetFontSize(FONT_SIZE_16);
-#endif	
-    infor.x = 0;
-	infor.y = 0;
-	infor.w = LCD_WIDTH;
-	infor.h = LCD_HEIGHT;
-	infor.align = NOTIFY_ALIGN_CENTER;
-	infor.type = NOTIFY_TYPE_POPUP;
 
 	ret = sh_get_sensorhub_status(&hubStatus);
 #ifdef PPG_DEBUG	
@@ -1426,7 +716,7 @@ void PPGGetSensorHubData(void)
 			else
 				index = 1;
 
-			if(1
+			if((((g_ppg_trigger&TRIGGER_BY_SCC) != 0) || (g_ppg_trigger == TRIGGER_BY_MENU))
 			#ifdef CONFIG_FACTORY_TEST_SUPPORT
 				&& !IsFTPPGTesting()
 				&& !IsFTPPGAging()
@@ -1471,12 +761,6 @@ void PPGGetSensorHubData(void)
 								LOGD("No Skin Contact - PPG Stopped");
 							#endif
 								ppg_stop_flag = true;
-								if((g_ppg_trigger&TRIGGER_BY_MENU) != 0)
-								{
-									infor.img[0] = IMG_WRIST_OFF_ICON_ADDR;
-									infor.img_count = 1;
-									DisplayPopUp(infor);
-								}
 								return;
 							}
 						}
@@ -1504,7 +788,7 @@ void PPGGetSensorHubData(void)
 					LOGD("hr:%d", hr);
 				#endif
 
-					if(hr > PPG_HR_MIN)
+					if((hr >= PPG_HR_MIN)&&(hr <= PPG_HR_MAX))
 					{
 						for(i=0;i<sizeof(temp_hr)/sizeof(temp_hr[0]);i++)
 						{
@@ -1565,7 +849,7 @@ void PPGGetSensorHubData(void)
 				#ifdef PPG_DEBUG
 					LOGD("spo2:%d", spo2);
 				#endif
-					if(spo2 >= PPG_SPO2_MIN)
+					if((spo2 >= PPG_SPO2_MIN)&&(spo2 <= PPG_SPO2_MAX))
 					{
 						for(i=0;i<sizeof(temp_spo2)/sizeof(temp_spo2[0]);i++)
 						{
@@ -1631,23 +915,6 @@ void PPGGetSensorHubData(void)
 		LOGD("FIFO status is not ready:%d,%d", ret, hubStatus);
 	#endif
 	}
-
-	if((g_ppg_data == PPG_DATA_BPT)&&(screen_id == SCREEN_ID_BP))
-	{
-		static bool flag = false;
-		
-		flag = !flag;
-		if(flag || get_bpt_ok_flag)
-			ppg_redraw_data_flag = true;
-	}
-	else if((g_ppg_data == PPG_DATA_SPO2)&&(screen_id == SCREEN_ID_SPO2 || screen_id == SCREEN_ID_IDLE))
-	{
-		ppg_redraw_data_flag = true;
-	}
-	else if((g_ppg_data == PPG_DATA_HR)&&(screen_id == SCREEN_ID_HR || screen_id == SCREEN_ID_IDLE))
-	{
-		ppg_redraw_data_flag = true;
-	}
 }
 
 void ppg_delay_start_timerout(struct k_timer *timer_id)
@@ -1688,8 +955,6 @@ bool CheckSCC(void)
 
 void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type)
 {
-	notify_infor infor = {0};
-
 #ifdef PPG_DEBUG	
 	LOGD("data:%d, type:%d", data_type, trigger_type);
 #endif
@@ -1697,22 +962,10 @@ void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type)
 	if(PPGIsSccCheck())
 		PPGStopCheck();
 
-#ifdef FONTMAKER_UNICODE_FONT
-	LCD_SetFontSize(FONT_SIZE_20);
-#else
-	LCD_SetFontSize(FONT_SIZE_16);
-#endif
-	infor.x = 0;
-	infor.y = 0;
-	infor.w = LCD_WIDTH;
-	infor.h = LCD_HEIGHT;
-	infor.align = NOTIFY_ALIGN_CENTER;
-	infor.type = NOTIFY_TYPE_POPUP;
-
 	switch(trigger_type)
 	{
 	case TRIGGER_BY_HOURLY:
-		if(!is_wearing())
+		if(0)//(!is_wearing())
 		{
 			return;
 		}
@@ -1723,30 +976,33 @@ void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type)
 			if(PPGIsWorking())
 				PPGStopCheck();
 
-			infor.img_count = 0;
-			mmi_ucs2cpy(infor.text, (uint8_t*)&str_timing_note[global_settings.language]);
-			DisplayPopUp(infor);
-
 			g_ppg_data = data_type;
 			k_timer_start(&ppg_delay_start_timer, K_MSEC((NOTIFY_TIMER_INTERVAL+1)*1000), K_NO_WAIT);
 			return;
 		}
+
+		switch(data_type)
+		{
+		case PPG_DATA_HR:
+			g_hr_hourly = 0;
+			break;
+		case PPG_DATA_SPO2:
+			g_spo2_hourly = 0;
+			break;
+		case PPG_DATA_BPT:
+			memset(&g_bpt_hourly, 0x00, sizeof(bpt_data));
+			break;
+		}
 		break;
 		
 	case TRIGGER_BY_MENU:
-		if(!is_wearing())
+		if(0)//(!is_wearing())
 		{
-			infor.img[0] = IMG_WRIST_OFF_ICON_ADDR;
-			infor.img_count = 1;
-			DisplayPopUp(infor);
 			return;
 		}
 
 		if(PPGIsWorkingTiming())
 		{
-			infor.img_count = 0;
-			mmi_ucs2cpy(infor.text, (uint8_t*)str_running_note[global_settings.language]);
-			DisplayPopUp(infor);
 			return;
 		}
 
@@ -1766,36 +1022,36 @@ void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type)
 
 #ifdef CONFIG_BLE_SUPPORT
 	case TRIGGER_BY_APP_ONE_KEY:
-		if(!is_wearing())
+		if(0)//(!is_wearing())
 		{
-			MCU_send_app_one_key_measure_data();
+			//MCU_send_app_one_key_measure_data();
 			return;
 		}
 		if(PPGIsWorking())
 		{
 			if(g_ppg_data == PPG_DATA_HR)
 				g_ppg_trigger |= trigger_type;
-			else
-				MCU_send_app_one_key_measure_data();
+			//else
+			//	MCU_send_app_one_key_measure_data();
 
 			return;
 		}
 		break;
 		
 	case TRIGGER_BY_APP:
-		if(!is_wearing())
+		if(0)//(!is_wearing())
 		{
 			uint8_t hr = 0;
 			
-			MCU_send_app_get_ppg_data(data_type, &hr);
+			//MCU_send_app_get_ppg_data(data_type, &hr);
 			return;
 		}
 		if(PPGIsWorking())
 		{
 			if(g_ppg_data == PPG_DATA_HR)
 				g_ppg_trigger |= trigger_type;
-			else
-				MCU_send_app_get_ppg_data(data_type, &g_hr);
+			//else
+			//	MCU_send_app_get_ppg_data(data_type, &g_hr);
 
 			return;
 		}
@@ -1902,7 +1158,7 @@ void PPGStartCheck(void)
 	scc_check_sum = SCC_COMPARE_MAX;
 	
 	PPG_Enable();
-	PPG_Power_On();
+	//PPG_Power_On();
 	PPG_i2c_on();
 	
 	ppg_power_flag = 1;
@@ -1913,7 +1169,6 @@ void PPGStartCheck(void)
 void PPGStopCheck(void)
 {
 	int status = -1;
-	bool save_flag = false;
 	
 #ifdef PPG_DEBUG
 	LOGD("ppg_power_flag:%d", ppg_power_flag);
@@ -1933,7 +1188,7 @@ void PPGStopCheck(void)
 	sensorhub_disable_algo();
 
 	PPG_i2c_off();
-	PPG_Power_Off();
+	//PPG_Power_Off();
 	PPG_Disable();
 
 	ppg_power_flag = 0;
@@ -1942,7 +1197,7 @@ void PPGStopCheck(void)
 	if((g_ppg_trigger&TRIGGER_BY_APP_ONE_KEY) != 0)
 	{
 		g_ppg_trigger = g_ppg_trigger&(~TRIGGER_BY_APP_ONE_KEY);
-		MCU_send_app_one_key_measure_data();
+		//MCU_send_app_one_key_measure_data();
 	}
 	if((g_ppg_trigger&TRIGGER_BY_APP) != 0)
 	{
@@ -1950,13 +1205,13 @@ void PPGStopCheck(void)
 		switch(g_ppg_data)
 		{
 		case PPG_DATA_HR:
-			MCU_send_app_get_ppg_data(g_ppg_data, &g_hr);
+			//MCU_send_app_get_ppg_data(g_ppg_data, &g_hr);
 			break;
 		case PPG_DATA_SPO2:
-			MCU_send_app_get_ppg_data(g_ppg_data, &g_spo2);
+			//MCU_send_app_get_ppg_data(g_ppg_data, &g_spo2);
 			break;
 		case PPG_DATA_BPT:
-			MCU_send_app_get_ppg_data(g_ppg_data, (uint8_t*)&g_bpt);
+			//MCU_send_app_get_ppg_data(g_ppg_data, (uint8_t*)&g_bpt);
 			break;
 		}
 	}
@@ -1973,10 +1228,12 @@ void PPGStopCheck(void)
 			{
 				flag = true;
 				g_hr_menu = g_hr;
+				UpdateLastPPGData(date_time, PPG_DATA_HR, &g_hr_menu);
+
 			#ifdef CONFIG_BLE_SUPPORT	
 				if(g_ble_connected)
 				{
-					MCU_send_app_get_ppg_data(PPG_DATA_HR, &g_hr);
+					//MCU_send_app_get_ppg_data(PPG_DATA_HR, &g_hr);
 				}
 			#endif
 			}
@@ -1986,10 +1243,12 @@ void PPGStopCheck(void)
 			{
 				flag = true;
 				g_spo2_menu = g_spo2;
+				UpdateLastPPGData(date_time, PPG_DATA_SPO2, &g_spo2_menu);
+				
 			#ifdef CONFIG_BLE_SUPPORT	
 				if(g_ble_connected)
 				{
-					MCU_send_app_get_ppg_data(PPG_DATA_SPO2, &g_spo2);
+					//MCU_send_app_get_ppg_data(PPG_DATA_SPO2, &g_spo2);
 				}
 			#endif
 			}
@@ -2001,10 +1260,12 @@ void PPGStopCheck(void)
 				{
 					flag = true;
 					memcpy(&g_bpt_menu, &g_bpt, sizeof(bpt_data));
+					UpdateLastPPGData(date_time, PPG_DATA_BPT, &g_bpt_menu);
+					
 				#ifdef CONFIG_BLE_SUPPORT	
 					if(g_ble_connected)
 					{
-						MCU_send_app_get_ppg_data(PPG_DATA_BPT, (uint8_t*)&g_bpt);
+						//MCU_send_app_get_ppg_data(PPG_DATA_BPT, (uint8_t*)&g_bpt);
 					}
 				#endif	
 				}
@@ -2014,7 +1275,7 @@ void PPGStopCheck(void)
 
 		if(flag)
 		{
-			SyncSendHealthData();
+			//SyncSendHealthData();
 			g_hr_menu = 0;
 			g_spo2_menu = 0;
 			memset(&g_bpt_menu, 0x00, sizeof(bpt_data));
@@ -2030,24 +1291,27 @@ void PPGStopCheck(void)
 		{
 		case PPG_DATA_HR:
 			tmp_hr = g_hr;
+			g_hr_hourly = g_hr;
 			if(!ppg_skin_contacted_flag)
 				tmp_hr = 0xFE;
-			SetCurDayHrRecData(g_health_check_time, tmp_hr);
+			//SetCurDayHrRecData(g_health_check_time, tmp_hr);
 			StartPPG(PPG_DATA_BPT, TRIGGER_BY_HOURLY);
 			break;
 			
 		case PPG_DATA_SPO2:
 			tmp_spo2 = g_spo2;
+			g_spo2_hourly = g_spo2;
 			if(!ppg_skin_contacted_flag)
 				tmp_spo2 = 0xFE;
-			SetCurDaySpo2RecData(g_health_check_time, tmp_spo2);
+			//SetCurDaySpo2RecData(g_health_check_time, tmp_spo2);
 			break;
 			
 		case PPG_DATA_BPT:
 			memcpy(&tmp_bpt, &g_bpt, sizeof(bpt_data));
+			memcpy(&g_bpt_hourly, &g_bpt, sizeof(bpt_data));
 			if(!ppg_skin_contacted_flag)
 				memset(&tmp_bpt, 0xFE, sizeof(bpt_data));
-			SetCurDayBptRecData(g_health_check_time, tmp_bpt);
+			//SetCurDayBptRecData(g_health_check_time, tmp_bpt);
 			StartPPG(PPG_DATA_SPO2, TRIGGER_BY_HOURLY);
 			break;
 		}
@@ -2066,55 +1330,6 @@ void PPGStopCheck(void)
 		return;
 	}
 #endif
-
-	if(g_ppg_alg_mode == ALG_MODE_HR_SPO2)
-	{
-		if((g_ppg_data == PPG_DATA_HR)&&(g_hr > 0))
-		{
-			last_health.hr_rec.timestamp.year = date_time.year;
-			last_health.hr_rec.timestamp.month = date_time.month; 
-			last_health.hr_rec.timestamp.day = date_time.day;
-			last_health.hr_rec.timestamp.hour = date_time.hour;
-			last_health.hr_rec.timestamp.minute = date_time.minute;
-			last_health.hr_rec.timestamp.second = date_time.second;
-			last_health.hr_rec.timestamp.week = date_time.week;
-			last_health.hr_rec.hr = g_hr;
-			save_flag = true;
-		}
-		else if((g_ppg_data == PPG_DATA_SPO2)&&(g_spo2 > 0))
-		{
-			last_health.spo2_rec.timestamp.year = date_time.year;
-			last_health.spo2_rec.timestamp.month = date_time.month; 
-			last_health.spo2_rec.timestamp.day = date_time.day;
-			last_health.spo2_rec.timestamp.hour = date_time.hour;
-			last_health.spo2_rec.timestamp.minute = date_time.minute;
-			last_health.spo2_rec.timestamp.second = date_time.second;
-			last_health.spo2_rec.timestamp.week = date_time.week;
-			last_health.spo2_rec.spo2 = g_spo2;
-			save_flag = true;
-		}
-	}
-	else if((g_ppg_alg_mode == ALG_MODE_BPT)&&(g_ppg_bpt_status == BPT_STATUS_GET_EST))
-	{
-		if((g_bpt.systolic > 0)&&(g_bpt.diastolic > 0))
-		{
-			last_health.bpt_rec.timestamp.year = date_time.year;
-			last_health.bpt_rec.timestamp.month = date_time.month; 
-			last_health.bpt_rec.timestamp.day = date_time.day;
-			last_health.bpt_rec.timestamp.hour = date_time.hour;
-			last_health.bpt_rec.timestamp.minute = date_time.minute;
-			last_health.bpt_rec.timestamp.second = date_time.second;
-			last_health.bpt_rec.timestamp.week = date_time.week;
-			last_health.bpt_rec.systolic = g_bpt.systolic;
-			last_health.bpt_rec.diastolic = g_bpt.diastolic;
-			save_flag = true;
-		}
-	}
-
-	if(save_flag)
-	{
-		save_cur_health_to_record(&last_health);
-	}
 }
 
 void PPGStopBptCal(void)
@@ -2125,7 +1340,7 @@ void PPGStopBptCal(void)
 	sensorhub_disable_algo();
 
 	PPG_i2c_off();
-	PPG_Power_Off();
+	//PPG_Power_Off();
 	PPG_Disable();
 
 	ppg_power_flag = 0;
@@ -2145,23 +1360,7 @@ static void ppg_skin_check_timerout(struct k_timer *timer_id)
 static void ppg_menu_stop_timerout(struct k_timer *timer_id)
 {
 	ppg_stop_flag = true;
-	
-	if((screen_id == SCREEN_ID_HR)
-		||(screen_id == SCREEN_ID_SPO2)
-		||(screen_id == SCREEN_ID_BP)
-		)
-	{
-		g_ppg_status = PPG_STATUS_MEASURE_FAIL;
-
-		if(screen_id == SCREEN_ID_HR)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_HR;
-		else if(screen_id == SCREEN_ID_SPO2)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_SPO2;
-		else if(screen_id == SCREEN_ID_BP)
-			scr_msg[screen_id].para |= SCREEN_EVENT_UPDATE_BP;
-		
-		scr_msg[screen_id].act = SCREEN_ACTION_UPDATE;
-	}
+	g_ppg_status = PPG_STATUS_MEASURE_FAIL;
 }
 
 void PPG_init(void)
@@ -2187,8 +1386,8 @@ void PPG_init(void)
 	DateIncrease(&last_health.bpt_rec.timestamp, 7);
 	if(DateCompare(last_health.bpt_rec.timestamp, date_time) > 0)
 	{
-		g_bpt.systolic = last_health.bpt_rec.systolic;
-		g_bpt.diastolic = last_health.bpt_rec.diastolic;
+		g_bpt.systolic = last_health.bpt_rec.bpt.systolic;
+		g_bpt.diastolic = last_health.bpt_rec.bpt.diastolic;
 	}
 
 	if(!sh_init_interface())
@@ -2276,12 +1475,6 @@ void PPGMsgProcess(void)
 		ppg_get_data_flag = false;
 	}
 	
-	if(ppg_redraw_data_flag)
-	{
-		PPGRedrawData();
-		ppg_redraw_data_flag = false;
-	}
-
 	if(ppg_delay_start_flag)
 	{
 		switch(g_ppg_data)

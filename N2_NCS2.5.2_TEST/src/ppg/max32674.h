@@ -188,10 +188,13 @@ extern uint8_t ppg_test_info[256];
 
 extern uint8_t g_hr;
 extern uint8_t g_hr_menu;
+extern uint8_t g_hr_hourly;
 extern uint8_t g_spo2;
 extern uint8_t g_spo2_menu;
+extern uint8_t g_spo2_hourly;
 extern bpt_data g_bpt;
 extern bpt_data g_bpt_menu;
+extern bpt_data g_bpt_hourly;
 
 extern sys_date_timer_t g_health_check_time;
 extern PPG_WORK_STATUS g_ppg_status;
@@ -200,14 +203,8 @@ extern void PPG_init(void);
 extern void PPGMsgProcess(void);
 
 /*heart rate*/
-extern void SetCurDayBptRecData(sys_date_timer_t time_stamp, bpt_data bpt);
-extern void GetCurDayBptRecData(uint8_t *databuf);
-extern void SetCurDaySpo2RecData(sys_date_timer_t time_stamp, uint8_t spo2);
-extern void GetCurDaySpo2RecData(uint8_t *databuf);
-extern void SetCurDayHrRecData(sys_date_timer_t time_stamp, uint8_t hr);
-extern void GetCurDayHrRecData(uint8_t *databuf);
 extern void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type);
 extern void StartSCC(void);
 extern bool CheckSCC(void);
-
+extern void UpdateLastPPGData(sys_date_timer_t time_stamp, PPG_DATA_TYPE type, void *data);
 #endif/*__MAX32674_H__*/
