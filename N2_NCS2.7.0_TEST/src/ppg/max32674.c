@@ -38,9 +38,6 @@
 bool ppg_int_event = false;
 bool ppg_bpt_is_calbraed = false;
 bool ppg_bpt_cal_need_update = false;
-bool get_bpt_ok_flag = false;
-bool get_hr_ok_flag = false;
-bool get_spo2_ok_flag = false;
 bool ppg_skin_contacted_flag = false;
 
 sys_date_timer_t g_health_check_time = {0};
@@ -75,133 +72,20 @@ uint8_t g_ppg_bpt_status = BPT_STATUS_GET_EST;
 uint8_t g_ppg_ver[64] = {0};
 
 uint8_t g_hr = 0;
-uint8_t g_hr_menu = 0;
-uint8_t g_hr_hourly = 0;
 uint8_t g_spo2 = 0;
-uint8_t g_spo2_menu = 0;
-uint8_t g_spo2_hourly = 0;
 bpt_data g_bpt = {0};
-bpt_data g_bpt_menu = {0};
-bpt_data g_bpt_hourly = {0};
 
 static uint8_t scc_check_sum = 0;
 static uint8_t SCC_COMPARE_MAX = PPG_SCC_COUNT_MAX;
-
-static uint8_t temp_hr_count = 0;
-static uint8_t temp_spo2_count = 0;
-static uint8_t temp_hr[PPG_HR_COUNT_MAX] = {0};
-static uint8_t temp_spo2[PPG_SPO2_COUNT_MAX] = {0};
-
 static void ppg_set_appmode_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(ppg_appmode_timer, ppg_set_appmode_timerout, NULL);
-static void ppg_auto_stop_timerout(struct k_timer *timer_id);
-K_TIMER_DEFINE(ppg_stop_timer, ppg_auto_stop_timerout, NULL);
-static void ppg_menu_stop_timerout(struct k_timer *timer_id);
-K_TIMER_DEFINE(ppg_menu_stop_timer, ppg_menu_stop_timerout, NULL);
 static void ppg_get_data_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(ppg_get_hr_timer, ppg_get_data_timerout, NULL);
-static void ppg_delay_start_timerout(struct k_timer *timer_id);
-K_TIMER_DEFINE(ppg_delay_start_timer, ppg_delay_start_timerout, NULL);
 static void ppg_bpt_est_start_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(ppg_bpt_est_start_timer, ppg_bpt_est_start_timerout, NULL);
 static void ppg_skin_check_timerout(struct k_timer *timer_id);
 K_TIMER_DEFINE(ppg_skin_check_timer, ppg_skin_check_timerout, NULL);
 
-void UpdateLastPPGData(sys_date_timer_t time_stamp, PPG_DATA_TYPE type, void *data)
-{
-	switch(type)
-	{
-	case PPG_DATA_HR:
-		{
-			uint8_t *p_hr = data;
-			
-			memcpy(&last_health.hr_rec.timestamp, &time_stamp, sizeof(sys_date_timer_t));
-			last_health.hr_rec.hr = *p_hr;
-			if(*p_hr > last_health.hr_max)
-			{
-				if(last_health.hr_min == 0)
-				{
-					if(last_health.hr_max > 0)
-						last_health.hr_min = last_health.hr_max;
-					else
-						last_health.hr_min = *p_hr;
-				}
-				last_health.hr_max = *p_hr;
-			}
-			else if(*p_hr < last_health.hr_min)
-			{
-				last_health.hr_min = *p_hr;
-			}
-		}
-		break;
-		
-	case PPG_DATA_SPO2:
-		{
-			uint8_t *p_spo2 = data;
-			
-			memcpy(&last_health.spo2_rec.timestamp, &time_stamp, sizeof(sys_date_timer_t));
-			last_health.spo2_rec.spo2 = *p_spo2;
-			if(*p_spo2 > last_health.spo2_max)
-			{
-				if(last_health.spo2_min == 0)
-				{
-					if(last_health.spo2_max > 0)
-						last_health.spo2_min = last_health.spo2_max;
-					else
-						last_health.spo2_min = *p_spo2;
-				}
-				last_health.spo2_max = *p_spo2;
-			}
-			else if(*p_spo2 < last_health.spo2_min)
-			{
-				last_health.spo2_min = *p_spo2;
-			}
-		}
-		break;
-		
-	case PPG_DATA_BPT:
-		{
-			bpt_data *p_bpt = data;
-			
-			memcpy(&last_health.bpt_rec.timestamp, &date_time, sizeof(sys_date_timer_t));
-			memcpy(&last_health.bpt_rec.bpt, p_bpt, sizeof(bpt_data));
-			if(p_bpt->systolic > last_health.bpt_max.systolic)
-			{
-				if(last_health.bpt_min.systolic == 0)
-				{
-					if(last_health.bpt_max.systolic > 0)
-						last_health.bpt_min.systolic = last_health.bpt_max.systolic;
-					else
-						last_health.bpt_min.systolic = p_bpt->systolic;
-				}
-				last_health.bpt_max.systolic = p_bpt->systolic;
-			}
-			else if(p_bpt->systolic < last_health.bpt_min.systolic)
-			{
-				last_health.bpt_min.systolic = p_bpt->systolic;
-			}
-			
-			if(p_bpt->diastolic > last_health.bpt_max.diastolic)
-			{
-				if(last_health.bpt_min.diastolic == 0)
-				{
-					if(last_health.bpt_max.diastolic > 0)
-						last_health.bpt_min.diastolic = last_health.bpt_max.diastolic;
-					else
-						last_health.bpt_min.diastolic = p_bpt->diastolic;
-				}
-				last_health.bpt_max.diastolic = p_bpt->diastolic;
-			}
-			else if(p_bpt->diastolic < last_health.bpt_min.diastolic)
-			{
-				last_health.bpt_min.diastolic = p_bpt->diastolic;
-			}
-		}
-		break;
-	}
-
-	save_cur_health_to_record(&last_health);
-}
 
 void GetPPGData(uint8_t *hr, uint8_t *spo2, uint8_t *systolic, uint8_t *diastolic)
 {
@@ -216,26 +100,6 @@ void GetPPGData(uint8_t *hr, uint8_t *spo2, uint8_t *systolic, uint8_t *diastoli
 	
 	if(diastolic != NULL)
 		*diastolic = g_bpt.diastolic;
-}
-
-bool IsInPPGScreen(void)
-{
-	//if(screen_id == SCREEN_ID_HR || screen_id == SCREEN_ID_SPO2 || screen_id == SCREEN_ID_BP)
-	//	return true;
-	//else
-		return false;
-}
-
-bool PPGIsWorkingTiming(void)
-{
-	if((g_ppg_trigger&TRIGGER_BY_HOURLY) != 0)
-	{
-		return true;
-	}
-	else
-	{
-		return false;
-	}
 }
 
 bool PPGIsSccCheck(void)
@@ -287,14 +151,12 @@ bool PPGSenSorSet(void)
 	{
 		if(!ppg_bpt_is_calbraed)
 		{
-			status = sh_check_bpt_cal_data();
-			if(status && !ppg_bpt_cal_need_update)
+			if(!ppg_bpt_cal_need_update)
 			{
 			#ifdef PPG_DEBUG
 				LOGD("check bpt cal success");
 			#endif
 				sh_set_bpt_cal_data();
-				//ppg_bpt_is_calbraed = true;
 				g_ppg_bpt_status = BPT_STATUS_GET_EST;
 			}
 			else
@@ -394,61 +256,16 @@ void StartSensorhubCallBack(void)
 	#ifdef PPG_DEBUG	
 		LOGD("ppg hr start success!");
 	#endif
+	
+		MapcsSendData(UART_DATA_PPG, COM_OPEN, sizeof(COM_OPEN));
 		ppg_power_flag = 2;
-
-		if((g_ppg_trigger&TRIGGER_BY_HOURLY) == TRIGGER_BY_HOURLY)
-		{
-			if(g_ppg_data == PPG_DATA_HR)
-			{
-				k_timer_start(&ppg_stop_timer, K_MSEC(PPG_CHECK_HR_TIMELY*60*1000), K_NO_WAIT);
-			}
-			else if(g_ppg_data == PPG_DATA_SPO2)
-			{
-				k_timer_start(&ppg_stop_timer, K_MSEC(PPG_CHECK_SPO2_TIMELY*60*1000), K_NO_WAIT);
-			}
-			else if(g_ppg_data == PPG_DATA_BPT)
-			{
-				k_timer_start(&ppg_stop_timer, K_MSEC(PPG_CHECK_BPT_TIMELY*60*1000), K_NO_WAIT);
-			}
-		}
-	#ifndef UI_STYLE_HEALTH_BAR	
-		else if((g_ppg_trigger&TRIGGER_BY_MENU) == TRIGGER_BY_MENU)
-		{
-			if(g_ppg_data == PPG_DATA_HR)
-			{
-				k_timer_start(&ppg_menu_stop_timer, K_SECONDS(PPG_CHECK_HR_MENU), K_NO_WAIT);
-			}
-			else if(g_ppg_data == PPG_DATA_SPO2)
-			{
-				k_timer_start(&ppg_menu_stop_timer, K_SECONDS(PPG_CHECK_SPO2_MENU), K_NO_WAIT);
-			}
-			else if(g_ppg_data == PPG_DATA_BPT)
-			{
-				k_timer_start(&ppg_menu_stop_timer, K_SECONDS(PPG_CHECK_BPT_MENU), K_NO_WAIT);
-			}
-		}
-	#endif
-		else if((g_ppg_trigger&TRIGGER_BY_MENU) == TRIGGER_BY_APP)
-		{
-			if(g_ppg_data == PPG_DATA_HR)
-			{
-				k_timer_start(&ppg_menu_stop_timer, K_SECONDS(PPG_CHECK_HR_MENU), K_NO_WAIT);
-			}
-			else if(g_ppg_data == PPG_DATA_SPO2)
-			{
-				k_timer_start(&ppg_menu_stop_timer, K_SECONDS(PPG_CHECK_SPO2_MENU), K_NO_WAIT);
-			}
-			else if(g_ppg_data == PPG_DATA_BPT)
-			{
-				k_timer_start(&ppg_menu_stop_timer, K_SECONDS(PPG_CHECK_BPT_MENU), K_NO_WAIT);
-			}
-		}
 	}
 	else
 	{
 	#ifdef PPG_DEBUG
 		LOGD("ppg hr start false!");
 	#endif
+		MapcsSendData(UART_DATA_PPG, COM_CLOSE, sizeof(COM_CLOSE));
 		ppg_power_flag = 0;
 	}
 }
@@ -456,7 +273,7 @@ void StartSensorhubCallBack(void)
 void StartSensorhub(void)
 {
 	SH_set_to_APP_mode();
-	k_timer_start(&ppg_appmode_timer, K_MSEC(2000), K_NO_WAIT);
+	k_timer_start(&ppg_appmode_timer, K_MSEC(500), K_NO_WAIT);
 }
 
 static void ppg_bpt_est_start_timerout(struct k_timer *timer_id)
@@ -547,6 +364,8 @@ void PPGGetSensorHubData(void)
 			uint32_t i,j,index = 0;
 			uint8_t scd_status = 0;
 			static uint8_t count=0;
+			uint8_t buffer[CAL_RESULT_SIZE+16] = {0};
+			uint32_t len;
 
 			for(i=0,j=0;i<u32_sampleCnt;i++)
 			{
@@ -635,18 +454,26 @@ void PPGGetSensorHubData(void)
 					}
 				#endif
 
+					strcpy(buffer, COM_PPG_GET_DATA);
+					len = strlen(COM_PPG_GET_DATA);
+					memcpy(&buffer[len], (void*)&bpt, sizeof(bpt));
+					MapcsSendData(UART_DATA_PPG, buffer, sizeof(bpt)+len);
+					
 					if(g_ppg_bpt_status == BPT_STATUS_GET_CAL)
 					{
 						if((bpt.status == 2) && (bpt.perc_comp == 100))
 						{
-							//get calbration data success
 						#ifdef PPG_DEBUG
 							LOGD("get calbration data success!");
 						#endif
-							//ppg_bpt_is_calbraed = true;
 							sh_get_bpt_cal_data();
+						
+							strcpy(buffer, COM_PPG_SAVE_CAL);
+							len = strlen(COM_PPG_SAVE_CAL);
+							memcpy(&buffer[len], sh_bpt_cal, CAL_RESULT_SIZE);
+							MapcsSendData(UART_DATA_PPG, buffer, CAL_RESULT_SIZE+len);
+							
 							ppg_bpt_cal_need_update = false;
-
 							ppg_stop_cal_flag = true;
 							PPGRestartToBpt();
 						}
@@ -664,9 +491,6 @@ void PPGGetSensorHubData(void)
 						#ifdef PPG_DEBUG
 							LOGD("get bpt data success!");
 						#endif
-
-							get_bpt_ok_flag = true;
-							ppg_stop_flag = true;
 						}
 					}
 				}
@@ -678,7 +502,12 @@ void PPGGetSensorHubData(void)
 				#endif	
 					
 					whrm_wspo2_suite_data_rx_mode1(&sensorhub_out, &databuf[index+SS_PACKET_COUNTERSIZE + SSMAX86176_MODE1_DATASIZE + SSACCEL_MODE1_DATASIZE]);
-					
+
+					strcpy(buffer, COM_PPG_GET_DATA);
+					len = strlen(COM_PPG_GET_DATA);
+					memcpy(&buffer[len], (void*)&sensorhub_out, sizeof(sensorhub_out));
+					MapcsSendData(UART_DATA_PPG, buffer, sizeof(sensorhub_out)+len);
+
 				#ifdef PPG_DEBUG
 					LOGD("skin:%d, hr:%d, spo2:%d", sensorhub_out.scd_contact_state, sensorhub_out.hr, sensorhub_out.spo2);
 				#endif
@@ -692,31 +521,12 @@ void PPGGetSensorHubData(void)
 				}
 			}
 
-		#ifdef CONFIG_FACTORY_TEST_SUPPORT
-			if(IsFTPPGTesting())
-			{
-				uint8_t ft_hr,ft_spo2;
-
-				ft_hr = sensorhub_out.hr/10 + ((sensorhub_out.hr%10 > 4) ? 1 : 0);
-				ft_spo2 = sensorhub_out.spo2/10 + ((sensorhub_out.spo2%10 > 4) ? 1 : 0);
-				sprintf(ppg_test_info, "Green: %d, %d\nIR:           %d, %d\nRed:       %d, %d\nSkin:      %d\nHR:          %d   SPO2:      %d", 
-																				max86176.led1,max86176.led2,
-																				max86176.led3,max86176.led4,
-																				max86176.led5,max86176.led6,
-																				sensorhub_out.scd_contact_state,
-																				ft_hr,ft_spo2);
-
-				FTPPGStatusUpdate(ft_hr, ft_spo2);
-				return;
-			}
-		#endif
-
 			if(u32_sampleCnt > 1)
 				index = (u32_sampleCnt-1) * num_bytes_to_read + 1;
 			else
 				index = 1;
 
-			if((((g_ppg_trigger&TRIGGER_BY_SCC) != 0) || (g_ppg_trigger == TRIGGER_BY_MENU))
+			if(((g_ppg_trigger&TRIGGER_BY_SCC) != 0)
 			#ifdef CONFIG_FACTORY_TEST_SUPPORT
 				&& !IsFTPPGTesting()
 				&& !IsFTPPGAging()
@@ -752,151 +562,6 @@ void PPGGetSensorHubData(void)
 						{	
 							ppg_stop_flag = true;
 							return;
-						}
-						else
-						{
-							if(!ppg_skin_contacted_flag)
-							{
-							#ifdef PPG_DEBUG
-								LOGD("No Skin Contact - PPG Stopped");
-							#endif
-								ppg_stop_flag = true;
-								return;
-							}
-						}
-					}
-				}
-			}
-
-			if(g_ppg_alg_mode == ALG_MODE_HR_SPO2)
-			{
-				if(j > 0)
-				{
-					heart_rate = heart_rate/j;
-					blood_oxy = blood_oxy/j;
-				}
-
-			#ifdef PPG_DEBUG
-				LOGD("avra hr:%d, spo2:%d", heart_rate, blood_oxy);
-			#endif
-				if(g_ppg_data == PPG_DATA_HR)
-				{
-					uint8_t hr = 0;
-					
-					hr = heart_rate/10 + ((heart_rate%10 > 4) ? 1 : 0);
-				#ifdef PPG_DEBUG
-					LOGD("hr:%d", hr);
-				#endif
-
-					if((hr >= PPG_HR_MIN)&&(hr <= PPG_HR_MAX))
-					{
-						for(i=0;i<sizeof(temp_hr)/sizeof(temp_hr[0]);i++)
-						{
-							uint8_t k;
-							
-							if(temp_hr[i] == 0)
-							{
-								temp_hr[i] = hr;
-								break;
-							}
-						#if 0	//xb add 2024-02-01 The heart rate is no longer sorted, and the first few sets of data are directly filtered
-							else if(temp_hr[i] >= hr)
-							{
-								for(k=sizeof(temp_hr)/sizeof(temp_hr[0])-1;k>=i+1;k--)
-								{
-									temp_hr[k] = temp_hr[k-1];
-								}
-								temp_hr[i] = hr;
-								break;
-							}
-						#endif	
-						}
-
-					#ifdef PPG_DEBUG
-						for(i=0;i<sizeof(temp_hr)/sizeof(temp_hr[0]);i++)
-						{		
-							LOGD("temp_hr:%d", temp_hr[i]);
-						}
-						LOGD("temp_hr_count:%d", temp_hr_count);
-					#endif
-
-						temp_hr_count++;
-						if(temp_hr_count >= sizeof(temp_hr)/sizeof(temp_hr[0]))
-						{
-							uint16_t hr_data = 0;
-							
-							for(i=PPG_HR_DEL_MIN_NUM;i<temp_hr_count;i++)
-							{
-								hr_data += temp_hr[i];
-							}
-
-							g_hr = hr_data/(temp_hr_count-PPG_HR_DEL_MIN_NUM);
-							temp_hr_count = 0;
-							
-							get_hr_ok_flag = true;
-							ppg_stop_flag = true;
-						#ifdef PPG_DEBUG
-							LOGD("get hr success! hr:%d", g_hr);
-						#endif
-						}
-					}
-				}
-				else if(g_ppg_data == PPG_DATA_SPO2)
-				{
-					uint8_t spo2 = 0;
-					
-					spo2 = blood_oxy/10 + ((blood_oxy%10 > 4) ? 1 : 0);
-				#ifdef PPG_DEBUG
-					LOGD("spo2:%d", spo2);
-				#endif
-					if((spo2 >= PPG_SPO2_MIN)&&(spo2 <= PPG_SPO2_MAX))
-					{
-						for(i=0;i<sizeof(temp_spo2)/sizeof(temp_spo2[0]);i++)
-						{
-							uint8_t k;
-							
-							if(temp_spo2[i] == 0)
-							{
-								temp_spo2[i] = spo2;
-								break;
-							}
-							else if(temp_spo2[i] >= spo2)
-							{
-								for(k=sizeof(temp_spo2)/sizeof(temp_spo2[0])-1;k>=i+1;k--)
-								{
-									temp_spo2[k] = temp_spo2[k-1];
-								}
-								temp_spo2[i] = spo2;
-								break;
-							}
-						}
-
-					#ifdef PPG_DEBUG
-						for(i=0;i<sizeof(temp_spo2)/sizeof(temp_spo2[0]);i++)
-						{		
-							LOGD("temp_spo2:%d", temp_spo2[i]);
-						}
-						LOGD("temp_spo2_count:%d", temp_spo2_count);
-					#endif
-
-						temp_spo2_count++;
-						if(temp_spo2_count >= sizeof(temp_spo2)/sizeof(temp_spo2[0]))
-						{
-							uint16_t spo2_data = 0;
-							
-							for(i=PPG_SPO2_DEL_MIN_NUM;i<temp_spo2_count;i++)
-							{
-								spo2_data += temp_spo2[i];
-							}
-							
-							g_spo2 = spo2_data/(temp_spo2_count-PPG_SPO2_DEL_MIN_NUM);
-							temp_spo2_count = 0;
-
-							get_spo2_ok_flag = true;
-							ppg_stop_flag = true;
-						#ifdef PPG_DEBUG
-							LOGD("get spo2 success! spo2:%d", g_spo2);
-						#endif
 						}
 					}
 				}
@@ -965,59 +630,9 @@ void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type)
 	switch(trigger_type)
 	{
 	case TRIGGER_BY_HOURLY:
-		if(0)//(!is_wearing())
-		{
-			return;
-		}
-
-		if(IsInPPGScreen())
-		{
-			PPGScreenStopTimer();
-			if(PPGIsWorking())
-				PPGStopCheck();
-
-			g_ppg_data = data_type;
-			k_timer_start(&ppg_delay_start_timer, K_MSEC((NOTIFY_TIMER_INTERVAL+1)*1000), K_NO_WAIT);
-			return;
-		}
-
-		switch(data_type)
-		{
-		case PPG_DATA_HR:
-			g_hr_hourly = 0;
-			break;
-		case PPG_DATA_SPO2:
-			g_spo2_hourly = 0;
-			break;
-		case PPG_DATA_BPT:
-			memset(&g_bpt_hourly, 0x00, sizeof(bpt_data));
-			break;
-		}
 		break;
 		
 	case TRIGGER_BY_MENU:
-		if(0)//(!is_wearing())
-		{
-			return;
-		}
-
-		if(PPGIsWorkingTiming())
-		{
-			return;
-		}
-
-		switch(data_type)
-		{
-		case PPG_DATA_HR:
-			g_hr_menu = 0;
-			break;
-		case PPG_DATA_SPO2:
-			g_spo2_menu = 0;
-			break;
-		case PPG_DATA_BPT:
-			memset(&g_bpt_menu, 0x00, sizeof(bpt_data));
-			break;
-		}
 		break;
 
 #ifdef CONFIG_BLE_SUPPORT
@@ -1076,23 +691,16 @@ void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type)
 	case PPG_DATA_HR:
 		g_ppg_alg_mode = ALG_MODE_HR_SPO2;
 		g_hr = 0;
-		temp_hr_count = 0;
-		memset(&temp_hr, 0x00, sizeof(temp_hr));	
-		get_hr_ok_flag = false;
 		break;
 		
 	case PPG_DATA_SPO2:
 		g_ppg_alg_mode = ALG_MODE_HR_SPO2;
 		g_spo2 = 0;
-		temp_spo2_count	= 0;
-		memset(&temp_spo2, 0x00, sizeof(temp_spo2));
-		get_spo2_ok_flag = false;
 		break;
 		
 	case PPG_DATA_BPT:
 		g_ppg_alg_mode = ALG_MODE_BPT;
 		memset(&g_bpt, 0, sizeof(bpt_data));
-		get_bpt_ok_flag = false;
 		break;
 	}
 
@@ -1158,7 +766,6 @@ void PPGStartCheck(void)
 	scc_check_sum = SCC_COMPARE_MAX;
 	
 	PPG_Enable();
-	//PPG_Power_On();
 	PPG_i2c_on();
 	
 	ppg_power_flag = 1;
@@ -1168,16 +775,11 @@ void PPGStartCheck(void)
 
 void PPGStopCheck(void)
 {
-	int status = -1;
-	
 #ifdef PPG_DEBUG
 	LOGD("ppg_power_flag:%d", ppg_power_flag);
 #endif
 	k_timer_stop(&ppg_appmode_timer);
-	k_timer_stop(&ppg_stop_timer);
-	k_timer_stop(&ppg_menu_stop_timer);
 	k_timer_stop(&ppg_get_hr_timer);
-	k_timer_stop(&ppg_delay_start_timer);
 	k_timer_stop(&ppg_bpt_est_start_timer);
 	k_timer_stop(&ppg_skin_check_timer);
 
@@ -1195,140 +797,24 @@ void PPGStopCheck(void)
 
 #ifdef CONFIG_BLE_SUPPORT
 	if((g_ppg_trigger&TRIGGER_BY_APP_ONE_KEY) != 0)
-	{
 		g_ppg_trigger = g_ppg_trigger&(~TRIGGER_BY_APP_ONE_KEY);
-		//MCU_send_app_one_key_measure_data();
-	}
+
 	if((g_ppg_trigger&TRIGGER_BY_APP) != 0)
-	{
 		g_ppg_trigger = g_ppg_trigger&(~TRIGGER_BY_APP);
-		switch(g_ppg_data)
-		{
-		case PPG_DATA_HR:
-			//MCU_send_app_get_ppg_data(g_ppg_data, &g_hr);
-			break;
-		case PPG_DATA_SPO2:
-			//MCU_send_app_get_ppg_data(g_ppg_data, &g_spo2);
-			break;
-		case PPG_DATA_BPT:
-			//MCU_send_app_get_ppg_data(g_ppg_data, (uint8_t*)&g_bpt);
-			break;
-		}
-	}
 #endif	
+
 	if((g_ppg_trigger&TRIGGER_BY_MENU) != 0)
-	{
-		bool flag = false;
-		
 		g_ppg_trigger = g_ppg_trigger&(~TRIGGER_BY_MENU);
-		switch(g_ppg_data)
-		{
-		case PPG_DATA_HR:
-			if(get_hr_ok_flag)
-			{
-				flag = true;
-				g_hr_menu = g_hr;
-				UpdateLastPPGData(date_time, PPG_DATA_HR, &g_hr_menu);
 
-			#ifdef CONFIG_BLE_SUPPORT	
-				if(g_ble_connected)
-				{
-					//MCU_send_app_get_ppg_data(PPG_DATA_HR, &g_hr);
-				}
-			#endif
-			}
-			break;
-		case PPG_DATA_SPO2:
-			if(get_spo2_ok_flag)
-			{
-				flag = true;
-				g_spo2_menu = g_spo2;
-				UpdateLastPPGData(date_time, PPG_DATA_SPO2, &g_spo2_menu);
-				
-			#ifdef CONFIG_BLE_SUPPORT	
-				if(g_ble_connected)
-				{
-					//MCU_send_app_get_ppg_data(PPG_DATA_SPO2, &g_spo2);
-				}
-			#endif
-			}
-			break;
-		case PPG_DATA_BPT:
-			if(get_bpt_ok_flag)
-			{
-				if(g_ppg_bpt_status == BPT_STATUS_GET_EST)
-				{
-					flag = true;
-					memcpy(&g_bpt_menu, &g_bpt, sizeof(bpt_data));
-					UpdateLastPPGData(date_time, PPG_DATA_BPT, &g_bpt_menu);
-					
-				#ifdef CONFIG_BLE_SUPPORT	
-					if(g_ble_connected)
-					{
-						//MCU_send_app_get_ppg_data(PPG_DATA_BPT, (uint8_t*)&g_bpt);
-					}
-				#endif	
-				}
-			}
-			break;
-		}
-
-		if(flag)
-		{
-			//SyncSendHealthData();
-			g_hr_menu = 0;
-			g_spo2_menu = 0;
-			memset(&g_bpt_menu, 0x00, sizeof(bpt_data));
-		}
-	}
 	if((g_ppg_trigger&TRIGGER_BY_HOURLY) != 0)
-	{
-		uint8_t tmp_hr,tmp_spo2;
-		bpt_data tmp_bpt;
-
 		g_ppg_trigger = g_ppg_trigger&(~TRIGGER_BY_HOURLY);
-		switch(g_ppg_data)
-		{
-		case PPG_DATA_HR:
-			tmp_hr = g_hr;
-			g_hr_hourly = g_hr;
-			if(!ppg_skin_contacted_flag)
-				tmp_hr = 0xFE;
-			//SetCurDayHrRecData(g_health_check_time, tmp_hr);
-			StartPPG(PPG_DATA_BPT, TRIGGER_BY_HOURLY);
-			break;
-			
-		case PPG_DATA_SPO2:
-			tmp_spo2 = g_spo2;
-			g_spo2_hourly = g_spo2;
-			if(!ppg_skin_contacted_flag)
-				tmp_spo2 = 0xFE;
-			//SetCurDaySpo2RecData(g_health_check_time, tmp_spo2);
-			break;
-			
-		case PPG_DATA_BPT:
-			memcpy(&tmp_bpt, &g_bpt, sizeof(bpt_data));
-			memcpy(&g_bpt_hourly, &g_bpt, sizeof(bpt_data));
-			if(!ppg_skin_contacted_flag)
-				memset(&tmp_bpt, 0xFE, sizeof(bpt_data));
-			//SetCurDayBptRecData(g_health_check_time, tmp_bpt);
-			StartPPG(PPG_DATA_SPO2, TRIGGER_BY_HOURLY);
-			break;
-		}
-	}
 
 	if((g_ppg_trigger&TRIGGER_BY_SCC) != 0)
-	{
 		g_ppg_trigger = g_ppg_trigger&(~TRIGGER_BY_SCC);
-	}
 
 #ifdef CONFIG_FACTORY_TEST_SUPPORT
 	if((g_ppg_trigger&TRIGGER_BY_FT) != 0)
-	{
 		g_ppg_trigger = g_ppg_trigger&(~TRIGGER_BY_FT);
-		FTPPGStatusUpdate(0, 0);
-		return;
-	}
 #endif
 }
 
@@ -1340,15 +826,9 @@ void PPGStopBptCal(void)
 	sensorhub_disable_algo();
 
 	PPG_i2c_off();
-	//PPG_Power_Off();
 	PPG_Disable();
 
 	ppg_power_flag = 0;
-}
-
-static void ppg_auto_stop_timerout(struct k_timer *timer_id)
-{
-	ppg_stop_flag = true;
 }
 
 static void ppg_skin_check_timerout(struct k_timer *timer_id)
@@ -1357,10 +837,75 @@ static void ppg_skin_check_timerout(struct k_timer *timer_id)
 		ppg_stop_flag = true;
 }
 
-static void ppg_menu_stop_timerout(struct k_timer *timer_id)
+void UartPPGEventHandle(uint8_t *data, uint32_t data_len)
 {
-	ppg_stop_flag = true;
-	g_ppg_status = PPG_STATUS_MEASURE_FAIL;
+	uint8_t *ptr;
+
+	if(data == NULL || data_len == 0)
+		return;
+
+	ptr = strstr(data, PPG_DATA_HEAD);
+	if(ptr != NULL)
+	{
+		uint8_t *ptr1,*ptr2;
+
+		ptr += strlen(PPG_DATA_HEAD);
+		if((ptr1 = strstr(ptr, COM_OPEN)) != NULL)
+		{
+			ptr1 += strlen(COM_OPEN);
+			if((ptr2 = strstr(ptr1, COM_PPG_GET_HR)) != NULL)
+			{
+				StartPPG(PPG_DATA_HR, TRIGGER_BY_MENU);
+			}
+			else if((ptr2 = strstr(ptr1, COM_PPG_GET_SPO2)) != NULL)
+			{
+				StartPPG(PPG_DATA_SPO2, TRIGGER_BY_MENU);
+			}
+			else if((ptr2 = strstr(ptr1, COM_PPG_GET_BPT)) != NULL)
+			{
+				ptr2 += strlen(COM_PPG_GET_BPT);
+				if((ptr1 = strstr(ptr2, COM_PPG_GET_CAL)) != NULL)
+				{
+					ppg_bpt_cal_need_update = true;					
+				}
+				else
+				{
+					memcpy(sh_bpt_cal, ptr2, (ptr2-data));
+					ppg_bpt_cal_need_update = false;
+				}
+				
+				StartPPG(PPG_DATA_BPT, TRIGGER_BY_MENU);				
+			}
+		}
+		else if((ptr1 = strstr(ptr, COM_CLOSE)) != NULL)
+		{
+			PPGStopCheck();
+		}
+		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE)) != NULL)
+		{
+			SH_OTA_upgrade_ready();
+		}
+		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_PAGE_NUM)) != NULL)
+		{
+			ptr1 += strlen(COM_PPG_UPGRADE_PAGE_NUM);
+			SH_OTA_upgrade_set_page_num(ptr1, (ptr1-data));
+		}
+		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_VECTOR_BYTES)) != NULL)
+		{
+			ptr1 += strlen(COM_PPG_UPGRADE_VECTOR_BYTES);
+			SH_OTA_upgrade_set_vector_bytes(ptr1, (ptr1-data));
+		}
+		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_AUTH_BYTES)) != NULL)
+		{
+			ptr1 += strlen(COM_PPG_UPGRADE_AUTH_BYTES);
+			SH_OTA_upgrade_set_auth_bytes(ptr1, (ptr1-data));
+		}
+		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_FLASH_PAGE)) != NULL)
+		{
+			ptr1 += strlen(COM_PPG_UPGRADE_FLASH_PAGE);
+		    SH_OTA_upgrade_set_flash_pages(ptr1, (ptr1-data));
+		}
+	}
 }
 
 void PPG_init(void)
@@ -1368,27 +913,6 @@ void PPG_init(void)
 #ifdef PPG_DEBUG
 	LOGD("PPG_init");
 #endif
-
-	//Display the last record within 7 days.
-	get_cur_health_from_record(&last_health);
-	DateIncrease(&last_health.hr_rec.timestamp, 7);
-	if(DateCompare(last_health.hr_rec.timestamp, date_time) > 0)
-	{
-		g_hr = last_health.hr_rec.hr;
-	}
-
-	DateIncrease(&last_health.spo2_rec.timestamp, 7);
-	if(DateCompare(last_health.spo2_rec.timestamp, date_time) > 0)
-	{
-		g_spo2 = last_health.spo2_rec.spo2;
-	}
-
-	DateIncrease(&last_health.bpt_rec.timestamp, 7);
-	if(DateCompare(last_health.bpt_rec.timestamp, date_time) > 0)
-	{
-		g_bpt.systolic = last_health.bpt_rec.bpt.systolic;
-		g_bpt.diastolic = last_health.bpt_rec.bpt.diastolic;
-	}
 
 	if(!sh_init_interface())
 		return;

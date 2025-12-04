@@ -39,9 +39,9 @@
 #define CMD_RESET				0x805D
 #define CMD_READ_ID				0xEFC8
 
-extern bool gxts04_init(void);
+extern bool gxts04_init(uint16_t *id);
 extern void gxts04_start(void);
 extern void gxts04_stop(void);
-extern bool GetTemperature(float *skin_temp, float *body_temp);
+extern void GetTemperature(uint8_t *sensor_temp);
 
 #endif/*__GXTS04_H__*/

@@ -41,16 +41,6 @@
 
 //#define TEMP_DEBUG
 
-typedef enum
-{
-	TEMP_STATUS_PREPARE,
-	TEMP_STATUS_MEASURING,
-	TEMP_STATUS_MEASURE_FAIL,
-	TEMP_STATUS_MEASURE_OK,
-	TEMP_STATUS_NOTIFY,
-	TEMP_STATUS_MAX
-}TEMP_WORK_STATUS;
-
 //sensor trigger type
 typedef enum
 {
@@ -60,48 +50,6 @@ typedef enum
 	TEMP_TRIGGER_BY_FT		=	0x08,
 }TEMP_TRIGGER_SOUCE;
 
-//单次测量
-typedef struct
-{
-	uint16_t year;
-	uint8_t month;
-	uint8_t day;
-	uint8_t hour;
-	uint8_t min;
-	uint8_t sec;
-	uint16_t deca_temp;	//实际温度放大10倍(36.5*10)
-}temp_rec1_data;
-
-//定时测量
-typedef struct
-{
-	uint16_t year;
-	uint8_t month;
-	uint8_t day;
-	uint8_t hour;
-	uint8_t min;
-	uint16_t deca_temp;	//实际温度放大10倍(36.5*10)
-}temp_rec2_nod;
-
-typedef struct
-{
-	temp_rec2_nod data[TEMP_REC2_MAX_DAILY];
-}temp_rec2_data;
-
-extern bool get_temp_ok_flag;
-
-extern float g_temp_skin;
-extern float g_temp_body;
-extern float g_temp_menu;
-extern float g_temp_hourly;
-
-extern TEMP_WORK_STATUS g_temp_status;
-#ifndef CONFIG_PPG_SUPPORT
-extern sys_date_timer_t g_health_check_time;
-#endif
-extern void SetCurDayTempRecData(sys_date_timer_t time_stamp, float data);
-extern void GetCurDayTempRecData(uint8_t *databuf);
 extern void StartTemp(TEMP_TRIGGER_SOUCE trigger_type);
-extern void UpdateLastTempData(sys_date_timer_t time_stamp, float data);
 #endif/*__TEMP_H__*/
 

@@ -26,6 +26,7 @@ static struct device *gpio_temp;
 static CRC_8 crc_8_CUSTOM = {0x31,0xff,0x00,false,false};
 #endif
 
+static uint16_t HardwareID = 0;
 static uint32_t measure_count = 0;
 static float t_sensor = 0.0;		//传感器温度值
 static float t_body = 0.0; 			//显示的温度值
@@ -84,7 +85,6 @@ static int32_t gxts04_write_data(uint16_t cmd)
 static void temp_sensor_init(void)
 {
 	uint8_t databuf[2] = {0};
-	uint16_t HardwareID = 0;
 
 	gxts04_write_data(CMD_RESET);
 	k_usleep(200);
@@ -99,12 +99,14 @@ static void temp_sensor_init(void)
 #endif
 }
 
-bool gxts04_init(void)
+bool gxts04_init(uint16_t *id)
 {
 	if(init_i2c() != 0)
 		return;
 
 	temp_sensor_init();
+	*id = HardwareID;
+	
 	//if(HardwareID != GXTS04_ID)
 	//	return false;
 	//else
@@ -113,7 +115,6 @@ bool gxts04_init(void)
 
 void gxts04_start(void)
 {
-	//MAX20353_LDO1Config();
 	temp_sensor_init();
 	
 	measure_count = 0;
@@ -128,23 +129,10 @@ void gxts04_stop(void)
 	measure_count = 0;
 }
 
-bool GetTemperature(float *skin_temp, float *body_temp)
+void GetTemperature(uint8_t *sensor_temp)
 {
-	bool flag=false;
-	uint8_t crc=0;
 	uint8_t databuf[10] = {0};
-	uint16_t trans_temp = 0;
 
-	if(!CheckSCC()
-	#ifdef CONFIG_FACTORY_TEST_SUPPORT
-		&& !IsFTTempTesting()
-		&& !IsFTTempAging()
-	#endif
-		)
-	{
-		return false;
-	}
-	
 	gxts04_write_data(CMD_WAKEUP);
 	gxts04_read_data(CMD_MEASURE_LOW_POWER, &databuf, 10);
 	gxts04_write_data(CMD_SLEEP);
@@ -153,88 +141,5 @@ bool GetTemperature(float *skin_temp, float *body_temp)
 	LOGD("temp:%02x,%02x,%02x", databuf[0],databuf[1],databuf[2]);
 #endif
 
-#ifdef CONFIG_CRC_SUPPORT
-	crc = crc8_cal(databuf, 2, crc_8_CUSTOM);
-  #ifdef TEMP_DEBUG
-	LOGD("crc:%02x", crc);
-  #endif
-	if(crc != databuf[2])
-		return false;
-#endif
-
-	trans_temp = databuf[0]*0x100 + databuf[1];
-	t_sensor = 175.0*(float)trans_temp/65535.0-45.0;
-	if(t_sensor > 99.9)
-		t_sensor = 0.0;
-	*skin_temp = t_sensor;
-	*body_temp = 0;
-
-#ifdef TEMP_DEBUG
-	LOGD("count:%d, real temp:%d.%d", measure_count, (int16_t)(t_sensor*10)/10, (int16_t)(t_sensor*10)%10);
-#endif
-
-	if(t_sensor > 28)			//如果上一次测温大于32，那么开始计数
-	{
-		measure_count = measure_count+1;
-	}
-	else if(measure_count == 2000)
-	{
-		measure_count = 2000;
-	}
-	else
-	{
-		measure_count = 0;
-	}
-
-	if(measure_count == 0)
-	{
-		t_body = t_sensor; 
-		t_predict = 0;
-	}
-	else if((measure_count > 0)&&(measure_count <20))
-	{
-		t_body = t_sensor;
-	}
-	else if(measure_count == 20)
-	{
-		t_body = t_sensor;
-		t_temp80 = t_sensor;
-		if((t_sensor > 36)&&(t_sensor <= 41))
-			t_predict = 36.9 + (t_sensor-36)*4.1/5;
-		else if((t_sensor > 28)&&(t_sensor <= 36))
-			t_predict = 36.1 + (t_sensor-28)*0.8/8; 
-		else
-			t_predict = t_sensor;
-	}
-	else if((measure_count > 20)&&(measure_count <= 25))
-	{
-		t_body = ((measure_count-20)*0.8*(t_predict-t_temp80))/5 + t_temp80;
-	}
-
-	else if((measure_count > 25)&&(measure_count <= 30))
-	{
-		t_body = t_predict - ((30-measure_count)*0.2*(t_predict-t_temp80))/5;
-	}
-	else
-	{
-		if((t_sensor > 36)&&(t_sensor <= 41))
-			t_body = 36.9 + (t_sensor-36)*4.1/5;
-		else if((t_sensor > 28)&&(t_sensor <= 36))
-			t_body = 36.1 + (t_sensor-28)*0.8/8;
-		else
-			t_body = t_sensor;
-
-	#ifdef CONFIG_FACTORY_TEST_SUPPORT
-		if(!IsFTTempAging())
-	#endif
-			flag = true;
-	}
-
-	*body_temp = t_body;
-
-#ifdef TEMP_DEBUG
-	LOGD("flag:%d, t_temp80:%d.%d, t_body:%d.%d", flag, (int16_t)(t_temp80*10)/10, (int16_t)(t_temp80*10)%10, (int16_t)(t_body*10)/10, (int16_t)(t_body*10)%10);
-#endif
-
-	return flag;
+	memcpy(sensor_temp, databuf, sizeof(databuf));
 }

@@ -187,14 +187,8 @@ extern uint8_t g_ppg_ver[64];
 extern uint8_t ppg_test_info[256];
 
 extern uint8_t g_hr;
-extern uint8_t g_hr_menu;
-extern uint8_t g_hr_hourly;
 extern uint8_t g_spo2;
-extern uint8_t g_spo2_menu;
-extern uint8_t g_spo2_hourly;
 extern bpt_data g_bpt;
-extern bpt_data g_bpt_menu;
-extern bpt_data g_bpt_hourly;
 
 extern sys_date_timer_t g_health_check_time;
 extern PPG_WORK_STATUS g_ppg_status;

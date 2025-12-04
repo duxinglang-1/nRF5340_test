@@ -13,6 +13,7 @@
 #include "max_sh_interface.h"
 #include "max_sh_api.h"
 #include "settings.h"
+#include "uart.h"
 #include "logger.h"
 
 //#define MAX_DEBUG
@@ -1316,17 +1317,52 @@ int sh_get_authentication( uint8_t *response, int response_sz)
 	return status;
 }
 
+void sh_upgrade_start(void)
+{
+	int32_t s32_status;
+	uint8_t u8_rxbuf[3] = {0};
+	
+	SH_OTA_upgrade_process();
+	s32_status = sh_get_hub_fw_version(u8_rxbuf);
+	if(s32_status == SS_SUCCESS)
+	{
+		sprintf(g_ppg_ver, "%d.%d.%d", u8_rxbuf[0], u8_rxbuf[1], u8_rxbuf[2]);
+	#ifdef MAX_DEBUG
+		LOGD("FW version is:%s", g_ppg_ver);
+	#endif
+	}
+}
+
+void sh_upgrade_ok(uint8_t *data, uint32_t len)
+{
+	uint8_t buffer[64] = {0};
+	
+	PPG_i2c_off();
+	PPG_Disable();
+
+	sprintf(buffer, "%s%s", COM_PPG_UPGRADE_OK, data);
+	MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_OK, strlen(COM_PPG_UPGRADE_OK)+len);
+}
+
+void sh_upgrade_fail(void)
+{
+	PPG_i2c_off();
+	PPG_Disable();
+
+	MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FAIL, strlen(COM_PPG_UPGRADE_FAIL));
+}
+
 bool sh_init_interface(void)
 {
 	int32_t s32_status;
 	uint8_t u8_rxbuf[3] = {0};
 	uint8_t mcu_type;
+	uint8_t buffer[64] = {0};
 
 	sh_init_i2c();
 	sh_init_gpio();
 
 	SH_rst_to_APP_mode();
-	//SH_rst_to_BL_mode();
 
 	//check MCU type
 	s32_status = sh_get_bootloader_MCU_tye(u8_rxbuf);
@@ -1335,12 +1371,8 @@ bool sh_init_interface(void)
 	#ifdef MAX_DEBUG
 		LOGD("Read MCU type fail, %x", s32_status);
 	#endif
-		goto need_update;
-	
-		//PPG_i2c_off();
-		//PPG_Power_Off();
-		//PPG_Disable();
-		//return false;
+
+		goto end;
 	}
 #ifdef MAX_DEBUG	
 	LOGD("MCU type = %d", u8_rxbuf[0]);
@@ -1353,12 +1385,8 @@ bool sh_init_interface(void)
 	#ifdef MAX_DEBUG
 		LOGD("read FW version fail %x", s32_status);
 	#endif
-		goto need_update;
-	
-		//PPG_i2c_off();
-		//PPG_Power_Off();
-		//PPG_Disable();
-		//return false;
+
+		goto end;
 	}
 	else
 	{
@@ -1368,22 +1396,11 @@ bool sh_init_interface(void)
 	#endif
 	}
 
-	if(0)//((mcu_type != 1) || ((strcmp(g_ppg_ver, g_ppg_algo_ver) != 0)&&(strlen(g_ppg_algo_ver) > 0)))
-	{
-need_update:
-		SH_OTA_upgrade_process();
-		s32_status = sh_get_hub_fw_version(u8_rxbuf);
-		if(s32_status == SS_SUCCESS)
-		{
-			sprintf(g_ppg_ver, "%d.%d.%d", u8_rxbuf[0], u8_rxbuf[1], u8_rxbuf[2]);
-		#ifdef MAX_DEBUG
-			LOGD("FW version is:%s", g_ppg_ver);
-		#endif
-		}
-	}
-
+end:
+	sprintf(buffer, "%s%s", COM_PPG_GET_INFOR, g_ppg_ver);
+	MapcsSendData(UART_DATA_PPG, buffer, strlen(buffer));
+	
 	PPG_i2c_off();
-	//PPG_Power_Off();
 	PPG_Disable();
 	return true;
 }

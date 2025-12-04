@@ -191,41 +191,49 @@ static void uart_receive_data_handle(struct device *dev, uint8_t *data, uint32_t
 	LOGD("uart rece data!");
 #endif
 
-#ifdef CONFIG_PPG_SUPPORT
-	if(strncmp(data, PPG_DATA_HEAD, strlen(PPG_DATA_HEAD)) == 0)
+	if(dev == uart_wifi)
 	{
 	}
-#endif
+	else if(dev == uart_mapcs)
+	{
+	#ifdef CONFIG_PPG_SUPPORT
+		if(strncmp(data, PPG_DATA_HEAD, strlen(PPG_DATA_HEAD)) == 0)
+		{
+			UartPPGEventHandle(data, data_len);
+		}
+	#endif
 
-#ifdef CONFIG_ECG_SUPPORT
-	if(strncmp(data, ECG_DATA_HEAD, strlen(ECG_DATA_HEAD)) == 0)
-	{
-	}
-#endif
+	#ifdef CONFIG_ECG_SUPPORT
+		if(strncmp(data, ECG_DATA_HEAD, strlen(ECG_DATA_HEAD)) == 0)
+		{
+		}
+	#endif
 
-#ifdef CONFIG_TEMP_SUPPORT
-	if(strncmp(data, TEMP_DATA_HEAD, strlen(TEMP_DATA_HEAD)) == 0)
-	{
-	}
-#endif
+	#ifdef CONFIG_TEMP_SUPPORT
+		if(strncmp(data, TEMP_DATA_HEAD, strlen(TEMP_DATA_HEAD)) == 0)
+		{
+			UartTempEventHandle(data, data_len);
+		}
+	#endif
 
-#ifdef CONFIG_WIFI_SUPPORT	
-	if(strncmp(data, WIFI_DATA_HEAD, strlen(WIFI_DATA_HEAD)) == 0)
-	{
-	}
-#endif
+	#ifdef CONFIG_WIFI_SUPPORT	
+		if(strncmp(data, WIFI_DATA_HEAD, strlen(WIFI_DATA_HEAD)) == 0)
+		{
+		}
+	#endif
 
-#ifdef CONFIG_AUDIO_SUPPORT
-	if(strncmp(data, AUDIO_DATA_HEAD, strlen(AUDIO_DATA_HEAD)) == 0)
-	{
-	}
-#endif
+	#ifdef CONFIG_AUDIO_SUPPORT
+		if(strncmp(data, AUDIO_DATA_HEAD, strlen(AUDIO_DATA_HEAD)) == 0)
+		{
+		}
+	#endif
 
-#ifdef CONFIG_BLE_SUPPORT
-	if(strncmp(data, BLE_DATA_HEAD, strlen(BLE_DATA_HEAD)) == 0)
-	{
+	#ifdef CONFIG_BLE_SUPPORT
+		if(strncmp(data, BLE_DATA_HEAD, strlen(BLE_DATA_HEAD)) == 0)
+		{
+		}
+	#endif
 	}
-#endif
 }
 
 void UartMapcsSendData(void)

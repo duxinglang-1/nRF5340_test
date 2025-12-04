@@ -317,7 +317,7 @@
 #define CONFIG_ENABLE   (0x01)
 #define CONFIG_DISABLE  (0x00)
 
-#define SH_OTA_DATA_STORE_IN_FLASH
+//#define SH_OTA_DATA_STORE_IN_FLASH
 #define WAIT_MS wait_ms
 
 typedef enum
@@ -344,6 +344,8 @@ typedef enum
 
 #define SYSTEM_USES_MFIO_PIN
 #define SYSTEM_USES_RST_PIN
+
+extern uint8_t sh_bpt_cal[CAL_RESULT_SIZE];
 
 /**
 * @brief	Func to write to algohub/sensorhub via sending generic command byte sequences
