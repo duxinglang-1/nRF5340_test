@@ -13,6 +13,21 @@
 #include <zephyr/device.h>
 #include "datetime.h"
 
+#define COM_PPG_GET_INFOR		"INFOR:"
+#define COM_PPG_GET_HR			"HR:"
+#define COM_PPG_GET_SPO2		"SPO2:"
+#define COM_PPG_GET_BPT			"BPT:"
+#define COM_PPG_GET_DATA		"PPG_DATA:"
+#define COM_PPG_GET_CAL			"GET_CAL:"
+#define COM_PPG_SAVE_CAL		"SAVE_CAL:"
+#define COM_PPG_UPGRADE					"UPGRADE:"
+#define COM_PPG_UPGRADE_OK				"UPGRADE_OK:"
+#define COM_PPG_UPGRADE_FAIL			"UPGRADE_FAIL:"
+#define COM_PPG_UPGRADE_PAGE_NUM		"SET_PAGE_NUM:"
+#define COM_PPG_UPGRADE_VECTOR_BYTES	"SET_VECTOR_BYTES:"
+#define COM_PPG_UPGRADE_AUTH_BYTES		"SET_AUTH_BYTES:"
+#define COM_PPG_UPGRADE_FLASH_PAGE		"SET_FLASH_PAGE:"
+
 #define PPG_CHECK_HR_MENU			60
 #define PPG_CHECK_SPO2_MENU			150
 #define PPG_CHECK_BPT_MENU			150
@@ -200,5 +215,4 @@ extern void PPGMsgProcess(void);
 extern void StartPPG(PPG_DATA_TYPE data_type, PPG_TRIGGER_SOURCE trigger_type);
 extern void StartSCC(void);
 extern bool CheckSCC(void);
-extern void UpdateLastPPGData(sys_date_timer_t time_stamp, PPG_DATA_TYPE type, void *data);
 #endif/*__MAX32674_H__*/

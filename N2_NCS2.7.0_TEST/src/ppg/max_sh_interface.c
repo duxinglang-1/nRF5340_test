@@ -10,6 +10,7 @@
 #include <zephyr/device.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
+#include "max32674.h"
 #include "max_sh_interface.h"
 #include "max_sh_api.h"
 #include "settings.h"
@@ -1315,41 +1316,6 @@ int sh_get_authentication( uint8_t *response, int response_sz)
 								   response, response_sz, SS_DEFAULT_CMD_SLEEP_MS);
 
 	return status;
-}
-
-void sh_upgrade_start(void)
-{
-	int32_t s32_status;
-	uint8_t u8_rxbuf[3] = {0};
-	
-	SH_OTA_upgrade_process();
-	s32_status = sh_get_hub_fw_version(u8_rxbuf);
-	if(s32_status == SS_SUCCESS)
-	{
-		sprintf(g_ppg_ver, "%d.%d.%d", u8_rxbuf[0], u8_rxbuf[1], u8_rxbuf[2]);
-	#ifdef MAX_DEBUG
-		LOGD("FW version is:%s", g_ppg_ver);
-	#endif
-	}
-}
-
-void sh_upgrade_ok(uint8_t *data, uint32_t len)
-{
-	uint8_t buffer[64] = {0};
-	
-	PPG_i2c_off();
-	PPG_Disable();
-
-	sprintf(buffer, "%s%s", COM_PPG_UPGRADE_OK, data);
-	MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_OK, strlen(COM_PPG_UPGRADE_OK)+len);
-}
-
-void sh_upgrade_fail(void)
-{
-	PPG_i2c_off();
-	PPG_Disable();
-
-	MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FAIL, strlen(COM_PPG_UPGRADE_FAIL));
 }
 
 bool sh_init_interface(void)

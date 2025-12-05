@@ -45,7 +45,6 @@ PPG_WORK_STATUS g_ppg_status = PPG_STATUS_PREPARE;
 
 static bool ppg_appmode_init_flag = false;
 
-static bool ppg_fw_upgrade_flag = false;
 static bool ppg_delay_start_flag = false;
 static bool ppg_start_flag = false;
 static bool ppg_test_flag = false;
@@ -373,92 +372,12 @@ void PPGGetSensorHubData(void)
 
 				if(g_ppg_alg_mode == ALG_MODE_BPT)
 				{
-					bpt_algo_data_rx(&bpt, &databuf[index+SS_PACKET_COUNTERSIZE + SSMAX86176_MODE1_DATASIZE + SSACCEL_MODE1_DATASIZE + SSWHRM_WSPO2_SUITE_MODE1_DATASIZE]);
-				
-				#ifdef PPG_DEBUG
-					LOGD("bpt_status:%d, bpt_per:%d, bpt_sys:%d, bpt_dia:%d", bpt.status, bpt.perc_comp, bpt.sys_bp, bpt.dia_bp);
-					switch(bpt.status)
-					{
-					case 0:
-						LOGD("No signal");
-						break;
-					case 1:
-						LOGD("User calibration/estimation in progress ");
-						break;
-					case 2:
-						LOGD("Success");					
-						break;
-					case 3:
-						LOGD("Weak signal");						
-						break;
-					case 4:
-						LOGD("Motion");						
-						break;
-					case 5:
-						LOGD("Estimation failure");						
-						break;
-					case 6:
-						LOGD("Calibration partially complete");							
-						break;
-					case 7:
-						LOGD("Subject initialization failure");					
-						break;
-					case 8:
-						LOGD("Initialization completed");						
-						break;
-					case 9:
-						LOGD("Calibration reference BP trending error");						
-						break;
-					case 10:
-						LOGD("Calibration reference Inconsistency 1 error");						
-						break;
-					case 11:
-						LOGD("Calibration reference Inconsistency 2 error");						
-						break;
-					case 12:
-						LOGD("Calibration reference Inconsistency 3 error");							
-						break;
-					case 13:
-						LOGD("Calibration reference count mismatch");					
-						break;
-					case 14:
-						LOGD("Calibration reference are out of limits (systolic 80 to 180, diastolic 50 to 120)");						
-						break;
-					case 15:
-						LOGD("Number of calibrations exceed maximum");						
-						break;
-					case 16:
-						LOGD("Pulse pressure out of range");							
-						break;
-					case 17:
-						LOGD("Heart rate out of range");					
-						break;
-					case 18:
-						LOGD("Heart rate is above resting");						
-						break;
-					case 19:
-						LOGD("Perfusion Index is out of range");						
-						break;
-					case 20:
-						LOGD("Estimation error, try again");							
-						break;
-					case 21:
-						LOGD("BPT estimate is out of range from calibration references (systolic +-30, diastolic +-20) ");					
-						break;
-					case 22:
-						LOGD("BPT estimate is beyond the maximum limits (systolic 80 to 180, diastolic 50 to 120)");				
-						break;
-					default:
-						LOGD("Unknow");
-						break;
-					}
-				#endif
-
 					strcpy(buffer, COM_PPG_GET_DATA);
 					len = strlen(COM_PPG_GET_DATA);
-					memcpy(&buffer[len], (void*)&bpt, sizeof(bpt));
-					MapcsSendData(UART_DATA_PPG, buffer, sizeof(bpt)+len);
+					memcpy(&buffer[len], (void*)&databuf[index], SS_NORMAL_BPT_PACKAGE_SIZE);
+					MapcsSendData(UART_DATA_PPG, buffer, SS_NORMAL_BPT_PACKAGE_SIZE+len);
 					
+					bpt_algo_data_rx(&bpt, &databuf[index+SS_PACKET_COUNTERSIZE + SSMAX86176_MODE1_DATASIZE + SSACCEL_MODE1_DATASIZE + SSWHRM_WSPO2_SUITE_MODE1_DATASIZE]);
 					if(g_ppg_bpt_status == BPT_STATUS_GET_CAL)
 					{
 						if((bpt.status == 2) && (bpt.perc_comp == 100))
@@ -477,93 +396,14 @@ void PPGGetSensorHubData(void)
 							ppg_stop_cal_flag = true;
 							PPGRestartToBpt();
 						}
-						
-						return;
-					}
-					else if(g_ppg_bpt_status == BPT_STATUS_GET_EST)
-					{
-						g_bpt.systolic = bpt.sys_bp;
-						g_bpt.diastolic = bpt.dia_bp;
-							
-						if((bpt.status == 2) && (bpt.perc_comp == 100))
-						{
-							//get bpt data success
-						#ifdef PPG_DEBUG
-							LOGD("get bpt data success!");
-						#endif
-						}
 					}
 				}
 				else if(g_ppg_alg_mode == ALG_MODE_HR_SPO2)
 				{
-				#ifdef CONFIG_FACTORY_TEST_SUPPORT
-					if(IsFTPPGTesting())
-						max86176_data_rx(&max86176, &databuf[index+SS_PACKET_COUNTERSIZE + SSACCEL_MODE1_DATASIZE]);
-				#endif	
-					
-					whrm_wspo2_suite_data_rx_mode1(&sensorhub_out, &databuf[index+SS_PACKET_COUNTERSIZE + SSMAX86176_MODE1_DATASIZE + SSACCEL_MODE1_DATASIZE]);
-
 					strcpy(buffer, COM_PPG_GET_DATA);
 					len = strlen(COM_PPG_GET_DATA);
-					memcpy(&buffer[len], (void*)&sensorhub_out, sizeof(sensorhub_out));
-					MapcsSendData(UART_DATA_PPG, buffer, sizeof(sensorhub_out)+len);
-
-				#ifdef PPG_DEBUG
-					LOGD("skin:%d, hr:%d, spo2:%d", sensorhub_out.scd_contact_state, sensorhub_out.hr, sensorhub_out.spo2);
-				#endif
-
-					if(sensorhub_out.scd_contact_state == 3)	//Skin contact state:0: Undetected 1: Off skin 2: On some subject 3: On skin
-					{
-						heart_rate += sensorhub_out.hr;
-						blood_oxy += sensorhub_out.spo2;
-						j++;
-					}
-				}
-			}
-
-			if(u32_sampleCnt > 1)
-				index = (u32_sampleCnt-1) * num_bytes_to_read + 1;
-			else
-				index = 1;
-
-			if(((g_ppg_trigger&TRIGGER_BY_SCC) != 0)
-			#ifdef CONFIG_FACTORY_TEST_SUPPORT
-				&& !IsFTPPGTesting()
-				&& !IsFTPPGAging()
-			#endif
-				)
-			{
-				sensorhub_get_output_scd_state(&databuf[index + SS_PACKET_COUNTERSIZE + SSMAX86176_MODE1_DATASIZE + SSACCEL_MODE1_DATASIZE], &scd_status);
-			#ifdef PPG_DEBUG
-				LOGD("scd_status:%d", scd_status);
-			#endif
-				if(!ppg_stop_flag)
-				{
-					if(scd_status == 3)
-						scc_check_sum = SCC_COMPARE_MAX;
-					else
-						scc_check_sum--;
-
-					count++;
-					if(count >= SCC_COMPARE_MAX)
-					{
-						count = 0;
-						if(scc_check_sum != 0)
-							ppg_skin_contacted_flag = true;
-						else
-							ppg_skin_contacted_flag = false;
-
-						k_timer_stop(&ppg_skin_check_timer);
-						scc_check_sum = SCC_COMPARE_MAX;
-					#ifdef PPG_DEBUG
-						LOGD("scc check completed! scc_check_sum:%d,flag:%d", scc_check_sum,ppg_skin_contacted_flag);
-					#endif
-						if(g_ppg_trigger == TRIGGER_BY_SCC)
-						{	
-							ppg_stop_flag = true;
-							return;
-						}
-					}
+					memcpy(&buffer[len], (void*)&databuf[index], SS_NORMAL_PACKAGE_SIZE);
+					MapcsSendData(UART_DATA_PPG, buffer, SS_NORMAL_PACKAGE_SIZE+len);
 				}
 			}
 		}
@@ -870,7 +710,7 @@ void UartPPGEventHandle(uint8_t *data, uint32_t data_len)
 				}
 				else
 				{
-					memcpy(sh_bpt_cal, ptr2, (ptr2-data));
+					memcpy(sh_bpt_cal, ptr2, data_len-(ptr2-data));
 					ppg_bpt_cal_need_update = false;
 				}
 				
@@ -883,27 +723,27 @@ void UartPPGEventHandle(uint8_t *data, uint32_t data_len)
 		}
 		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE)) != NULL)
 		{
-			SH_OTA_upgrade_ready();
+			SH_OTA_upgrade_start();
 		}
 		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_PAGE_NUM)) != NULL)
 		{
 			ptr1 += strlen(COM_PPG_UPGRADE_PAGE_NUM);
-			SH_OTA_upgrade_set_page_num(ptr1, (ptr1-data));
+			SH_OTA_upgrade_set_page_num(ptr1, data_len-(ptr1-data));
 		}
 		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_VECTOR_BYTES)) != NULL)
 		{
 			ptr1 += strlen(COM_PPG_UPGRADE_VECTOR_BYTES);
-			SH_OTA_upgrade_set_vector_bytes(ptr1, (ptr1-data));
+			SH_OTA_upgrade_set_vector_bytes(ptr1, data_len-(ptr1-data));
 		}
 		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_AUTH_BYTES)) != NULL)
 		{
 			ptr1 += strlen(COM_PPG_UPGRADE_AUTH_BYTES);
-			SH_OTA_upgrade_set_auth_bytes(ptr1, (ptr1-data));
+			SH_OTA_upgrade_set_auth_bytes(ptr1, data_len-(ptr1-data));
 		}
 		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE_FLASH_PAGE)) != NULL)
 		{
 			ptr1 += strlen(COM_PPG_UPGRADE_FLASH_PAGE);
-		    SH_OTA_upgrade_set_flash_pages(ptr1, (ptr1-data));
+		    SH_OTA_upgrade_set_flash_pages(ptr1, data_len-(ptr1-data));
 		}
 	}
 }
@@ -929,12 +769,6 @@ void PPGMsgProcess(void)
 		ppg_int_event = false;
 	}
 	
-	if(ppg_fw_upgrade_flag)
-	{
-		SH_OTA_upgrade_process();
-		ppg_fw_upgrade_flag = false;
-	}
-
 #ifdef CONFIG_FACTORY_TEST_SUPPORT
 	if(ft_start_hr)
 	{

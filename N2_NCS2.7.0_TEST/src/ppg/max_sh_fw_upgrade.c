@@ -32,6 +32,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include "max32674.h"
 #include "max_sh_interface.h"
 #include "max_sh_fw_upgrade.h"
 #include "logger.h"
@@ -336,164 +337,26 @@ int32_t SH_OTA_upgrade_process(uint8_t* u8p_FwData)
 
 uint8_t u8_pageNumber;
 
-void SH_OTA_upgrade_set_page_num(uint8_t *data, uint32_t len)
+void SH_OTA_upgrade_ok(uint8_t *data, uint32_t len)
 {
-	//set page number
-	int32_t s32_status;
-
-	u8_pageNumber = data[0];
-	s32_status = sh_set_bootloader_numberofpages(u8_pageNumber);
-	if(s32_status != SS_SUCCESS)
-	{
-		LOGD("set page count fail %x", s32_status);
-		sh_upgrade_fail();
-	}
-	else
-	{
-		LOGD("set page count done %d", u8_pageNumber);
-		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_VECTOR_BYTES, strlen(COM_PPG_UPGRADE_VECTOR_BYTES));
-	}
-}
-
-void SH_OTA_upgrade_set_vector_bytes(uint8_t *data, uint32_t len)
-{
-	//Set vector bytes
-	int32_t s32_status;
-	uint8_t u8p_ivData[BL_AES_NONCE_SIZE] = {0};
-
-	s32_status = sh_set_bootloader_iv(u8p_ivData);
-	if(s32_status != SS_SUCCESS)
-	{
-		LOGD("Set the vector bytes fail %x", s32_status);
-		sh_upgrade_fail();
-	}
-	else
-	{
-		LOGD("Setting the vector bytes is done");
-		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_AUTH_BYTES, strlen(COM_PPG_UPGRADE_AUTH_BYTES));
-	}
-}
-
-void SH_OTA_upgrade_set_auth_bytes(uint8_t *data, uint32_t len)
-{
-	//Set auth bytes
-	int32_t s32_status;
-	uint8_t u8p_authData[BL_AES_AUTH_SIZE];
+	uint8_t buffer[64] = {0};
 	
-	s32_status = sh_set_bootloader_auth(data);
-	if(s32_status != SS_SUCCESS)
-	{
-		LOGD("Set the authentication fail %x", s32_status);
-		sh_upgrade_fail();
-	}
-	else
-	{
-		LOGD("Setting the authentication is done");
-	}
+	PPG_i2c_off();
+	PPG_Disable();
 
-	uint32_t u32_partialSize = BL_FLASH_PARTIAL_SIZE;
-	s32_status = sh_set_bootloader_partial_write_size(u32_partialSize);
-	if(s32_status != SS_SUCCESS)
-	{
-		LOGD("Set partial write size fail %x", s32_status);
-		sh_upgrade_fail();
-	}
-	else
-	{
-		LOGD("Set partial write size done %d", u32_partialSize);
-	}
-
-	s32_status = sh_set_bootloader_erase();
-	if(s32_status != SS_SUCCESS)
-	{
-		LOGD("Erase flash fail %x", s32_status);
-		sh_upgrade_fail();
-	}
-	else
-	{
-		LOGD("Erasing flash is done");
-		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FLASH_PAGE, strlen(COM_PPG_UPGRADE_FLASH_PAGE));
-	}
+	sprintf(buffer, "%s%s", COM_PPG_UPGRADE_OK, data);
+	MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_OK, strlen(COM_PPG_UPGRADE_OK)+len);
 }
 
-void SH_OTA_upgrade_set_flash_pages(uint8_t *data, uint32_t len)
+void SH_OTA_upgrade_fail(void)
 {
-	int32_t status;
-	uint8_t u8_rxbuf[3]={0};
-	static uint32_t i=0,j=0;
-    uint8_t ByteSeq[] = { 0x80, 0x04};
+	PPG_i2c_off();
+	PPG_Disable();
 
-	status = sh_write_cmd_with_data(&ByteSeq[0], sizeof(ByteSeq), data, len, BL_PAGE_W_DLY_TIME);
-	if(status != SS_SUCCESS)
-	{
-		LOGD("Write page %d part %d data FW fail: %x", i, j, status);
-		
-		goto out_loop;
-	}
-	else
-	{
-		j++;
-		if(j == (1+(8000/BL_FLASH_PARTIAL_SIZE)))
-		{
-			j = 0;
-			i++;
-			if(i == u8_pageNumber)
-				goto out_loop;
-		}
-
-		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FLASH_PAGE, strlen(COM_PPG_UPGRADE_FLASH_PAGE));
-
-		LOGD("write page %d data done!", i);
-		return;
-	}
-
-out_loop:
-
-	i = 0;
-	j = 0;
-	if(status != SS_SUCCESS)
-	{
-		LOGD("Write page fail %x", status);
-		sh_upgrade_fail();
-		return;
-	}
-	else
-	{
-		LOGD("All page is flashed");
-	}
-
-	SH_rst_to_APP_mode();
-
-	//check MCU type
-	status = sh_get_bootloader_MCU_tye(u8_rxbuf);
-	if(status != SS_SUCCESS)
-	{
-		LOGD("Read MCU type fail, %x", status);
-		sh_upgrade_fail();
-		return;
-	}
-	LOGD("MCU type = %d", u8_rxbuf[0]);
-
-	//check working mode and FW version
-	status = sh_get_hub_fw_version(u8_rxbuf);
-	if(status != SS_SUCCESS)
-	{
-		LOGD("read FW version fail %x", status);
-		sh_upgrade_fail();
-		return;
-	}
-	else
-	{
-		uint8_t ver[16] = {0};
-
-		sprintf(ver, "%d.%d.%d", u8_rxbuf[0], u8_rxbuf[1], u8_rxbuf[2]);
-		LOGD("FW version is %s", ver);
-		sh_upgrade_ok(ver, strlen(ver));
-	}
-	
+	MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FAIL, strlen(COM_PPG_UPGRADE_FAIL));
 }
 
-void SH_OTA_upgrade_ready(void)
+void SH_OTA_upgrade_start(void)
 {
 	int32_t s32_status;
 	uint8_t u8_rxbuf[3]={0};
@@ -549,6 +412,162 @@ void SH_OTA_upgrade_ready(void)
 
 fail:	
 
-	sh_upgrade_fail();
+	SH_OTA_upgrade_fail();
+}
+
+void SH_OTA_upgrade_set_page_num(uint8_t *data, uint32_t len)
+{
+	//set page number
+	int32_t s32_status;
+
+	u8_pageNumber = data[0];
+	s32_status = sh_set_bootloader_numberofpages(u8_pageNumber);
+	if(s32_status != SS_SUCCESS)
+	{
+		LOGD("set page count fail %x", s32_status);
+		SH_OTA_upgrade_fail();
+	}
+	else
+	{
+		LOGD("set page count done %d", u8_pageNumber);
+		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_VECTOR_BYTES, strlen(COM_PPG_UPGRADE_VECTOR_BYTES));
+	}
+}
+
+void SH_OTA_upgrade_set_vector_bytes(uint8_t *data, uint32_t len)
+{
+	//Set vector bytes
+	int32_t s32_status;
+	uint8_t u8p_ivData[BL_AES_NONCE_SIZE] = {0};
+
+	s32_status = sh_set_bootloader_iv(u8p_ivData);
+	if(s32_status != SS_SUCCESS)
+	{
+		LOGD("Set the vector bytes fail %x", s32_status);
+		SH_OTA_upgrade_fail();
+	}
+	else
+	{
+		LOGD("Setting the vector bytes is done");
+		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_AUTH_BYTES, strlen(COM_PPG_UPGRADE_AUTH_BYTES));
+	}
+}
+
+void SH_OTA_upgrade_set_auth_bytes(uint8_t *data, uint32_t len)
+{
+	//Set auth bytes
+	int32_t s32_status;
+	uint8_t u8p_authData[BL_AES_AUTH_SIZE];
+	
+	s32_status = sh_set_bootloader_auth(data);
+	if(s32_status != SS_SUCCESS)
+	{
+		LOGD("Set the authentication fail %x", s32_status);
+		SH_OTA_upgrade_fail();
+	}
+	else
+	{
+		LOGD("Setting the authentication is done");
+	}
+
+	uint32_t u32_partialSize = BL_FLASH_PARTIAL_SIZE;
+	s32_status = sh_set_bootloader_partial_write_size(u32_partialSize);
+	if(s32_status != SS_SUCCESS)
+	{
+		LOGD("Set partial write size fail %x", s32_status);
+		SH_OTA_upgrade_fail();
+	}
+	else
+	{
+		LOGD("Set partial write size done %d", u32_partialSize);
+	}
+
+	s32_status = sh_set_bootloader_erase();
+	if(s32_status != SS_SUCCESS)
+	{
+		LOGD("Erase flash fail %x", s32_status);
+		SH_OTA_upgrade_fail();
+	}
+	else
+	{
+		LOGD("Erasing flash is done");
+		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FLASH_PAGE, strlen(COM_PPG_UPGRADE_FLASH_PAGE));
+	}
+}
+
+void SH_OTA_upgrade_set_flash_pages(uint8_t *data, uint32_t len)
+{
+	int32_t status;
+	uint8_t u8_rxbuf[3]={0};
+	static uint32_t i=0,j=0;
+    uint8_t ByteSeq[] = { 0x80, 0x04};
+
+	status = sh_write_cmd_with_data(&ByteSeq[0], sizeof(ByteSeq), data, len, BL_PAGE_W_DLY_TIME);
+	if(status != SS_SUCCESS)
+	{
+		LOGD("Write page %d part %d data FW fail: %x", i, j, status);
+		
+		goto out_loop;
+	}
+	else
+	{
+		j++;
+		if(j == (1+(8000/BL_FLASH_PARTIAL_SIZE)))
+		{
+			j = 0;
+			i++;
+			if(i == u8_pageNumber)
+				goto out_loop;
+		}
+
+		MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FLASH_PAGE, strlen(COM_PPG_UPGRADE_FLASH_PAGE));
+
+		LOGD("write page %d data done!", i);
+		return;
+	}
+
+out_loop:
+
+	i = 0;
+	j = 0;
+	if(status != SS_SUCCESS)
+	{
+		LOGD("Write page fail %x", status);
+		SH_OTA_upgrade_fail();
+		return;
+	}
+	else
+	{
+		LOGD("All page is flashed");
+	}
+
+	SH_rst_to_APP_mode();
+
+	//check MCU type
+	status = sh_get_bootloader_MCU_tye(u8_rxbuf);
+	if(status != SS_SUCCESS)
+	{
+		LOGD("Read MCU type fail, %x", status);
+		SH_OTA_upgrade_fail();
+		return;
+	}
+	LOGD("MCU type = %d", u8_rxbuf[0]);
+
+	//check working mode and FW version
+	status = sh_get_hub_fw_version(u8_rxbuf);
+	if(status != SS_SUCCESS)
+	{
+		LOGD("read FW version fail %x", status);
+		SH_OTA_upgrade_fail();
+		return;
+	}
+	else
+	{
+		uint8_t ver[16] = {0};
+
+		sprintf(ver, "%d.%d.%d", u8_rxbuf[0], u8_rxbuf[1], u8_rxbuf[2]);
+		LOGD("FW version is %s", ver);
+		SH_OTA_upgrade_ok(ver, strlen(ver));
+	}
 }
 
