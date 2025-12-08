@@ -256,7 +256,7 @@ void StartSensorhubCallBack(void)
 		LOGD("ppg hr start success!");
 	#endif
 	
-		MapcsSendData(UART_DATA_PPG, COM_OPEN, sizeof(COM_OPEN));
+		MapcsSendData(UART_DATA_PPG, COM_PPG_SET_OPEN, sizeof(COM_PPG_SET_OPEN));
 		ppg_power_flag = 2;
 	}
 	else
@@ -264,7 +264,7 @@ void StartSensorhubCallBack(void)
 	#ifdef PPG_DEBUG
 		LOGD("ppg hr start false!");
 	#endif
-		MapcsSendData(UART_DATA_PPG, COM_CLOSE, sizeof(COM_CLOSE));
+		MapcsSendData(UART_DATA_PPG, COM_PPG_SET_CLOSE, sizeof(COM_PPG_SET_CLOSE));
 		ppg_power_flag = 0;
 	}
 }
@@ -690,9 +690,9 @@ void UartPPGEventHandle(uint8_t *data, uint32_t data_len)
 		uint8_t *ptr1,*ptr2;
 
 		ptr += strlen(PPG_DATA_HEAD);
-		if((ptr1 = strstr(ptr, COM_OPEN)) != NULL)
+		if((ptr1 = strstr(ptr, COM_PPG_SET_OPEN)) != NULL)
 		{
-			ptr1 += strlen(COM_OPEN);
+			ptr1 += strlen(COM_PPG_SET_OPEN);
 			if((ptr2 = strstr(ptr1, COM_PPG_GET_HR)) != NULL)
 			{
 				StartPPG(PPG_DATA_HR, TRIGGER_BY_MENU);
@@ -717,7 +717,7 @@ void UartPPGEventHandle(uint8_t *data, uint32_t data_len)
 				StartPPG(PPG_DATA_BPT, TRIGGER_BY_MENU);				
 			}
 		}
-		else if((ptr1 = strstr(ptr, COM_CLOSE)) != NULL)
+		else if((ptr1 = strstr(ptr, COM_PPG_SET_CLOSE)) != NULL)
 		{
 			PPGStopCheck();
 		}

@@ -103,7 +103,7 @@ void UartTempEventHandle(uint8_t *data, uint32_t data_len)
 			memcpy(&buffer[len], &sensor_id, sizeof(sensor_id));
 			MapcsSendData(UART_DATA_TEMP, buffer, len+sizeof(sensor_id));
 		}
-		else if((ptr1 = strstr(ptr, COM_OPEN)) != NULL)
+		else if((ptr1 = strstr(ptr, COM_TEMP_SET_OPEN)) != NULL)
 		{
 			StartTemp(TEMP_TRIGGER_BY_MENU);
 		}
@@ -111,7 +111,7 @@ void UartTempEventHandle(uint8_t *data, uint32_t data_len)
 		{
 			StartTemp(TEMP_TRIGGER_BY_MENU);
 		}
-		else if((ptr1 = strstr(ptr, COM_CLOSE)) != NULL)
+		else if((ptr1 = strstr(ptr, COM_TEMP_SET_CLOSE)) != NULL)
 		{
 			TempStop();
 		}
