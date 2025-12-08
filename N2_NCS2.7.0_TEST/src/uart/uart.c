@@ -193,6 +193,7 @@ static void uart_receive_data_handle(struct device *dev, uint8_t *data, uint32_t
 
 	if(dev == uart_wifi)
 	{
+		wifi_receive_data_handle(data, data_len);
 	}
 	else if(dev == uart_mapcs)
 	{
@@ -219,6 +220,7 @@ static void uart_receive_data_handle(struct device *dev, uint8_t *data, uint32_t
 	#ifdef CONFIG_WIFI_SUPPORT	
 		if(strncmp(data, WIFI_DATA_HEAD, strlen(WIFI_DATA_HEAD)) == 0)
 		{
+			UartWifiEventHandle(data, data_len);
 		}
 	#endif
 
