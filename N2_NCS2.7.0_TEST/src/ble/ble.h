@@ -11,7 +11,10 @@
 #ifndef __BLE_H__
 #define __BLE_H__
 
-#define COM_BLE_GET_INFOR		"INFOR:"
+#define COM_BLE_SET_OPEN		"OPEN:"
+#define COM_BLE_SET_CLOSE		"CLOSE:"
+#define COM_BLE_GET_VER			"VER:"
+#define COM_BLE_GET_MAC			"MAC:"
 #define COM_BLE_GET_STATUS		"STATUS:"
 #define COM_BLE_GET_SCAN_AP		"SCAN_AP:"
 #define COM_BLE_SET_CONNECT		"CONNECT:"
@@ -98,7 +101,7 @@ extern uint8_t g_ble_mac_addr[20];
 extern uint8_t g_nrf52810_ver[128];
 
 extern void uart_ble_test(void);
-extern void MCU_get_nrf52810_ver(void);
+extern void MCU_get_ble_app_ver(void);
 extern void MCU_get_ble_mac_address(void);
 extern void MCU_get_ble_status(void);
 extern void MCU_set_ble_work_mode(uint8_t work_mode);

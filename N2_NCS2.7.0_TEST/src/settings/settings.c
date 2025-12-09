@@ -17,6 +17,8 @@ bool need_save_settings = false;
 bool need_save_time = false;
 bool need_reset_settings = false;
 
+uint8_t g_fw_version[64] = VERSION_STR;
+
 RESET_STATUS g_reset_status = RESET_STATUS_IDLE;
 
 static bool reset_start_flag = false;

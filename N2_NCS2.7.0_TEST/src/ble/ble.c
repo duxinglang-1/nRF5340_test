@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <zephyr/kernel.h>
+#include "uart.h"
 #include "ble.h"
 #include "settings.h"
 #include "datetime.h"
@@ -19,26 +20,35 @@
 #include "max32674.h"
 #endif
 #include "inner_flash.h"
+#include "logger.h"
 
-bool blue_is_on = true;
+#define BLE_DEBUG
+
+bool ble_is_on = true;
 bool g_ble_connected = false;
 
+static bool get_ble_info_flag = false;
 static bool reply_cur_data_flag = false;
 
 uint8_t g_ble_mac_addr[20] = {0};
-uint8_t g_nrf5340_ver[128] = {0};
-
-sys_date_timer_t refresh_time = {0};
-
-static ENUM_BLE_WORK_MODE ble_work_mode = BLE_WORK_NORMAL;
 
 ENUM_BLE_STATUS g_ble_status = BLE_STATUS_BROADCAST;
 ENUM_BLE_MODE g_ble_mode = BLE_MODE_TURN_OFF;
 
+static sys_date_timer_t refresh_time = {0};
+static ENUM_BLE_WORK_MODE ble_work_mode = BLE_WORK_NORMAL;
+
 extern bool app_find_device;
 
 
-#ifdef CONFIG_BLE_SUPPORT
+static void GetBLEInfoCallBack(struct k_timer *timer_id);
+K_TIMER_DEFINE(get_ble_info_timer, GetBLEInfoCallBack, NULL);
+
+static void GetBLEInfoCallBack(struct k_timer *timer_id)
+{
+	get_ble_info_flag = true;
+}
+
 void ble_connect_or_disconnect_handle(uint8_t *buf, uint32_t len)
 {
 #ifdef UART_DEBUG
@@ -647,12 +657,12 @@ void APP_get_cur_hour_health(sys_date_timer_t ask_time)
 	LOGD("begin");
 #endif
 
-#ifdef CONFIG_PPG_SUPPORT
+#if 0//def CONFIG_PPG_SUPPORT
 	GetGivenTimeHrRecData(ask_time, &hr);
 	GetGivenTimeSpo2RecData(ask_time, &spo2);
 	GetGivenTimeBptRecData(ask_time, &bpt);
 #endif
-#ifdef CONFIG_TEMP_SUPPORT
+#if 0//def CONFIG_TEMP_SUPPORT
 	GetGivenTimeTempRecData(ask_time, &temp);
 #endif
 
@@ -1426,7 +1436,6 @@ void get_ble_status_response(uint8_t *buf, uint32_t len)
 		break;
 	}
 }
-#endif
 
 void get_nrf52810_ver_response(uint8_t *buf, uint32_t len)
 {
@@ -1462,7 +1471,7 @@ void get_ble_mac_address_response(uint8_t *buf, uint32_t len)
 #endif
 }
 
-void MCU_get_nrf52810_ver(void)
+void MCU_get_ble_app_ver(void)
 {
 	uint8_t reply[128] = {0};
 	uint32_t i,reply_len = 0;
@@ -1559,12 +1568,253 @@ void MCU_set_ble_work_mode(ENUM_BLE_MODE work_mode)
 	//BleSendData(reply, reply_len);	
 }
 
-void BLEMsgProcess(void)
+/**********************************************************************************
+*Name: ble_receive_data_handle
+*Function:  处理蓝牙接收到的数据
+*Parameter: 
+*			Input:
+*				buf 接收到的数据
+*				len 接收到的数据长度
+*			Output:
+*				none
+*			Return:
+*				void
+*Description:
+*	接收到的数据包的格式如下:
+*	包头			数据长度		操作		状态类型	控制		数据1	数据…		校验		包尾
+*	(StarFrame)		(Data length)	(ID)		(Status)	(Control)	(Data1)	(Data…)	(CRC8)		(EndFrame)
+*	(1 bytes)		(2 byte)		(2 byte)	(1 byte)	(1 byte)	(可选)	(可选)		(1 bytes)	(1 bytes)
+*
+*	例子如下表所示：
+*	Offset	Field		Size	Value(十六进制)		Description
+*	0		StarFrame	1		0xAB				起始帧
+*	1		Data length	2		0x0000-0xFFFF		数据长度,从ID开始一直到包尾
+*	3		Data ID		2		0x0000-0xFFFF	    ID
+*	5		Status		1		0x00-0xFF	        Status
+*	6		Control		1		0x00-0x01			控制
+*	7		Data0		1-14	0x00-0xFF			数据0
+*	8+n		CRC8		1		0x00-0xFF			数据校验,从包头开始到CRC前一位
+*	9+n		EndFrame	1		0x88				结束帧
+**********************************************************************************/
+void ble_receive_data_handle(uint8_t *buf, uint32_t len)
 {
+	uint8_t CRC_data=0,data_status;
+	uint16_t data_len,data_ID;
+	uint32_t i;
+
+#ifdef UART_DEBUG
+	//LOGD("receive:%s", buf);
+#endif
+
+	if((buf[0] != PACKET_HEAD) || (buf[len-1] != PACKET_END))	//format is error
+	{
+	#ifdef UART_DEBUG
+		LOGD("format is error! HEAD:%x, END:%x", buf[0], buf[len-1]);
+	#endif
+		return;
+	}
+
+	for(i=0;i<len-2;i++)
+		CRC_data = CRC_data+buf[i];
+
+	if(CRC_data != buf[len-2])									//crc is error
+	{
+	#ifdef UART_DEBUG
+		LOGD("CRC is error! data:%x, CRC:%x", buf[len-2], CRC_data);
+	#endif
+		return;
+	}
+
+	data_len = buf[1]*256+buf[2];
+	data_ID = buf[3]*256+buf[4];
+
+	switch(data_ID)
+	{
+	#ifdef CONFIG_BLE_SUPPORT
+	case BLE_WORK_MODE_ID:
+		nrf52810_report_work_mode(buf, len);//52810工作状态
+		break;
+	#ifdef CONFIG_PPG_SUPPORT
+	case HEART_RATE_ID:			//心率
+		APP_get_hr(buf, len);
+		break;
+	case BLOOD_OXYGEN_ID:		//血氧
+		APP_get_spo2(buf, len);
+		break;
+	case BLOOD_PRESSURE_ID:		//血压
+		APP_get_bpt(buf, len);
+		break;
+	case TEMPERATURE_ID:		//体温
+		APP_get_temp(buf, len);
+		break;	
+	case ONE_KEY_MEASURE_ID:	//一键测量
+		APP_get_one_key_measure_data(buf, len);
+		break;
+	#endif
+	case PULL_REFRESH_ID:		//下拉刷新
+		APP_get_cur_hour_data(buf, len);
+		break;
+	case SLEEP_DETAILS_ID:		//睡眠详情
+		break;
+	#ifdef CONFIG_ALARM_SUPPORT	
+	case FIND_DEVICE_ID:		//查找手环
+		APP_set_find_device(buf, len);
+		break;
+	#endif	
+	case SMART_NOTIFY_ID:		//智能提醒
+		break;
+	#ifdef CONFIG_ALARM_SUPPORT	
+	case ALARM_SETTING_ID:		//闹钟设置
+		APP_set_alarm(buf, len);
+		break;
+	#endif	
+	case USER_INFOR_ID:			//用户信息
+		break;
+	case SEDENTARY_ID:			//久坐提醒
+		break;
+	case SHAKE_SCREEN_ID:		//抬手亮屏
+		APP_set_wake_screen_by_wrist(buf, len);
+		break;
+	case MEASURE_HOURLY_ID:		//整点测量设置
+		APP_set_PHD_interval(buf, len);
+		break;
+	case SHAKE_PHOTO_ID:		//摇一摇拍照
+		break;
+	case LANGUAGE_SETTING_ID:	//中英日文切换
+		APP_set_language(buf, len);
+		break;
+	case TIME_24_SETTING_ID:	//12/24小时设置
+		APP_set_time_24_format(buf, len);
+		break;
+	#ifdef CONFIG_ALARM_SUPPORT	
+	case FIND_PHONE_ID:			//查找手机回复
+		APP_reply_find_phone(buf, len);
+		break;
+	#endif
+	case WEATHER_INFOR_ID:		//天气信息下发
+		break;
+	case TIME_SYNC_ID:			//时间同步
+		APP_set_date_time(buf, len);
+		break;
+	case TARGET_STEPS_ID:		//目标步数
+		APP_set_target_steps(buf, len);
+		break;
+	case BATTERY_LEVEL_ID:		//电池电量
+		APP_get_battery_level(buf, len);
+		break;
+	case FACTORY_RESET_ID:		//清除手环数据
+		APP_set_factory_reset(buf, len);
+		break;
+	case ECG_ID:				//心电
+		break;
+	case LOCATION_ID:			//获取定位信息
+		APP_get_location_data(buf, len);
+		break;
+	case DATE_FORMAT_ID:		//年月日格式
+		APP_set_date_format(buf, len);
+		break;
+	case BLE_CONNECT_ID:		//BLE断连提醒
+		ble_connect_or_disconnect_handle(buf, len);
+		break;
+	case GET_BLE_STATUS_ID:
+		get_ble_status_response(buf, len);
+		break;
+	case SET_BEL_WORK_MODE_ID:
+		break;	
+	case FIRMWARE_INFOR_ID:		//固件版本号
+		APP_get_firmware_version(buf, len);
+		break;
+	#endif/*CONFIG_BLE_SUPPORT*/
+
+	case GET_BLE_VER_ID:
+		get_ble_ver_response(buf, len);
+		break;
+	case GET_BLE_MAC_ADDR_ID:
+		get_ble_mac_address_response(buf, len);
+		break;
+	default:
+	#ifdef UART_DEBUG	
+		LOGD("data_id is unknown!");
+	#endif
+		break;
+	}
+}
+
+void UartBleEventHandle(uint8_t *data, uint32_t data_len)
+{
+	uint8_t *ptr,tmpbuf[256] = {0};
+	uint32_t len;
+
+	if(data == NULL || data_len == 0)
+		return;
+
+	ptr = strstr(data, BLE_DATA_HEAD);
+	if(ptr != NULL)
+	{
+		uint8_t *ptr1,*ptr2;
+
+		ptr += strlen(BLE_DATA_HEAD);
+		if((ptr1 = strstr(ptr, COM_BLE_SET_OPEN)) != NULL)
+		{
+		}
+		else if((ptr1 = strstr(ptr, COM_BLE_SET_CLOSE)) != NULL)
+		{
+		}
+		else if((ptr1 = strstr(ptr, COM_BLE_GET_VER)) != NULL)
+		{
+			sprintf(tmpbuf, "%s%s", COM_BLE_GET_VER, g_fw_version);
+			MapcsSendData(UART_DATA_BLE, tmpbuf, strlen(tmpbuf));
+		}
+		else if((ptr1 = strstr(ptr, COM_BLE_GET_MAC)) != NULL)
+		{
+			sprintf(tmpbuf, "%s%s", COM_BLE_GET_MAC, g_ble_mac_addr);
+			MapcsSendData(UART_DATA_BLE, tmpbuf, strlen(tmpbuf));
+		}
+	}
 }
 
 void BLE_init(void)
 {
+	k_timer_start(&get_ble_info_timer, K_MSEC(100), K_NO_WAIT);
 }
 
+void BLEMsgProcess(void)
+{
+	if(get_ble_info_flag)
+	{
+		static uint8_t index = 0;
+		switch(index)
+		{
+		case 0:
+			index = 1;
+			MCU_get_ble_app_ver();
+			k_timer_start(&get_ble_info_timer, K_MSEC(100), K_NO_WAIT);
+			break;
+		case 1:
+			index = 2;
+			MCU_get_ble_mac_address();
+			k_timer_start(&get_ble_info_timer, K_MSEC(100), K_NO_WAIT);
+			break;
+	#ifdef CONFIG_BLE_SUPPORT	
+		case 2:
+			MCU_get_ble_status();
+			break;
+	#else
+		//case 2:
+		//	MCU_set_ble_work_mode(BLE_MODE_TURN_OFF);
+		//	break;
+	#endif	
+		}
 
+		get_ble_info_flag = false;
+	}
+
+#ifdef CONFIG_BLE_SUPPORT
+	if(reply_cur_data_flag)
+	{
+		APP_get_cur_hour_sport(refresh_time);
+		APP_get_cur_hour_health(refresh_time);
+		reply_cur_data_flag = false;
+	}
+#endif
+}

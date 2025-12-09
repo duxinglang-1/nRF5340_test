@@ -55,8 +55,6 @@
 
 #define BUF_MAXSIZE	2048
 
-bool get_ble_info_flag = false;
-
 #ifdef CONFIG_PM_DEVICE
 bool uart_mapcs_sleep_flag = false;
 bool uart_mapcs_wake_flag = false;
@@ -141,10 +139,6 @@ K_TIMER_DEFINE(uart_wifi_sleep_in_timer, UartWifiSleepInCallBack, NULL);
 #endif
 #endif/*CONFIG_WIFI_SUPPORT*/
 
-static void GetBLEInfoCallBack(struct k_timer *timer_id);
-K_TIMER_DEFINE(get_ble_info_timer, GetBLEInfoCallBack, NULL);
-
-
 void copcs_wakeup_MCU(void)
 {
 	if(!gpio_mapcs)
@@ -207,6 +201,7 @@ static void uart_receive_data_handle(struct device *dev, uint8_t *data, uint32_t
 	#ifdef CONFIG_ECG_SUPPORT
 		if(strncmp(data, ECG_DATA_HEAD, strlen(ECG_DATA_HEAD)) == 0)
 		{
+			UartECGEventHandle(data, data_len);
 		}
 	#endif
 
@@ -234,6 +229,7 @@ static void uart_receive_data_handle(struct device *dev, uint8_t *data, uint32_t
 	#ifdef CONFIG_BLE_SUPPORT
 		if(strncmp(data, BLE_DATA_HEAD, strlen(BLE_DATA_HEAD)) == 0)
 		{
+			UartBleEventHandle(data, data_len);
 		}
 	#endif
 	}
@@ -653,11 +649,6 @@ static void UartWifiReceFrameCallBack(struct k_timer *timer_id)
 }
 #endif
 
-static void GetBLEInfoCallBack(struct k_timer *timer_id)
-{
-	get_ble_info_flag = true;
-}
-
 void UartWifiOff(void)
 {
 	if(k_timer_remaining_get(&uart_wifi_send_data_timer) > 0)
@@ -708,8 +699,6 @@ void uart_init(void)
 	gpio_pin_interrupt_configure(gpio_mapcs, MAPCS_INT_PIN, GPIO_INT_ENABLE|GPIO_INT_EDGE_FALLING);	
 	k_timer_start(&uart_mapcs_sleep_in_timer, K_SECONDS(UART_MAPCS_WAKE_HOLD_TIME_SEC), K_NO_WAIT);
 #endif
-
-	k_timer_start(&get_ble_info_timer, K_SECONDS(2), K_NO_WAIT);
 }
 
 #ifdef CONFIG_WIFI_SUPPORT
@@ -800,33 +789,4 @@ void UartMsgProc(void)
 		uart_wifi_rece_frame_flag = false;
 	}
 #endif
-
-	if(get_ble_info_flag)
-	{
-		static uint8_t index = 0;
-		switch(index)
-		{
-		case 0:
-			index = 1;
-			MCU_get_nrf52810_ver();
-			k_timer_start(&get_ble_info_timer, K_MSEC(100), K_NO_WAIT);
-			break;
-		case 1:
-			index = 2;
-			MCU_get_ble_mac_address();
-			k_timer_start(&get_ble_info_timer, K_MSEC(100), K_NO_WAIT);
-			break;
-	#ifdef CONFIG_BLE_SUPPORT	
-		case 2:
-			MCU_get_ble_status();
-			break;
-	#else
-		//case 2:
-		//	MCU_set_ble_work_mode(BLE_MODE_TURN_OFF);
-		//	break;
-	#endif	
-		}
-
-		get_ble_info_flag = false;
-	}
 }

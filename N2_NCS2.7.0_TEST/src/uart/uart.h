@@ -27,11 +27,8 @@ typedef enum
 	UART_DATA_MAX
 }UART_DATA_TYPE;
 
-extern uint8_t g_ble_mac_addr[20];
-extern uint8_t g_nrf5340_ver[128];
-
 extern void uart_ble_test(void);
-extern void MCU_get_nrf52810_ver(void);
+extern void MCU_get_ble_app_ver(void);
 extern void MCU_get_ble_mac_address(void);
 extern void MCU_get_ble_status(void);
 extern void MCU_set_ble_work_mode(uint8_t work_mode);
