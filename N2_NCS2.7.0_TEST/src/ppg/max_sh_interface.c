@@ -48,19 +48,30 @@
 #endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
-#define PPG_PORT DT_NODELABEL(gpio0)
+#define PPG_PORT0 DT_NODELABEL(gpio0)
 #else
 #error "gpio0 devicetree node is disabled"
-#define PPG_PORT	""
+#define PPG_PORT0	""
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio1), okay)
+#define PPG_PORT1 DT_NODELABEL(gpio1)
+#else
+#error "gpio1 devicetree node is disabled"
+#define PPG_PORT1	""
 #endif
 
-#define PPG_SDA_PIN		11
-#define PPG_SCL_PIN		12
+
+#define PPG_SDA_PIN		5
+#define PPG_SCL_PIN		4
 #define PPG_INT_PIN		13
-#define PPG_MFIO_PIN	14
-#define PPG_RST_PIN		16
-#define PPG_EN_PIN		17
-#define PPG_I2C_EN_PIN	29
+#define PPG_MFIO_PIN	23
+#define PPG_RST_PIN		25
+#define PPG_EN0_PIN		10	//给32674供电
+#define PPG_EN1_PIN		19	//给86176供电
+
+#define PPG_I2C_CON_PIN	8
+#define PPG_SPI_CON_PIN	29
+
 
 #define MAX32674_I2C_ADD     0x55
 	
@@ -79,7 +90,9 @@
 #define SS_TX_BUF_SIZE		(BL_MAX_PAGE_SIZE+BL_AES_AUTH_SIZE+BL_FLASH_CMD_LEN)
 
 static struct device *i2c_ppg = NULL;
-static struct device *gpio_ppg = NULL;
+static struct device *gpio_0_ppg = NULL;
+static struct device *gpio_1_ppg = NULL;
+
 static struct gpio_callback gpio_cb;
 
 uint8_t sh_write_buf[SS_TX_BUF_SIZE]={0};
@@ -99,45 +112,40 @@ void wait_ms(int ms)
 	k_sleep(K_MSEC(ms));
 }
 
-void PPG_i2c_on(void)
-{
-	if(gpio_ppg == NULL)
-		gpio_ppg = DEVICE_DT_GET(PPG_PORT);
-
-	gpio_pin_configure(gpio_ppg, PPG_I2C_EN_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_I2C_EN_PIN, 1);
-}
-
-void PPG_i2c_off(void)
-{
-	if(gpio_ppg == NULL)
-		gpio_ppg = DEVICE_DT_GET(PPG_PORT);
-
-	gpio_pin_configure(gpio_ppg, PPG_I2C_EN_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_I2C_EN_PIN, 0);
-}
-
 void PPG_Enable(void)
 {
-	gpio_pin_configure(gpio_ppg, PPG_EN_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_EN_PIN, 1);
+	gpio_pin_configure(gpio_1_ppg, PPG_EN0_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ppg, PPG_EN0_PIN, 1);
+	gpio_pin_configure(gpio_0_ppg, PPG_EN1_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_EN1_PIN, 1);
 	
 	k_sleep(K_MSEC(20));
 
-	gpio_pin_configure(gpio_ppg, PPG_RST_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 1);
+	gpio_pin_configure(gpio_0_ppg, PPG_SPI_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_SPI_CON_PIN, 0);
+	gpio_pin_configure(gpio_1_ppg, PPG_I2C_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ppg, PPG_I2C_CON_PIN, 1);
+
+	gpio_pin_configure(gpio_0_ppg, PPG_RST_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 1);
 }
 
 void PPG_Disable(void)
 {
-	gpio_pin_configure(gpio_ppg, PPG_EN_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_EN_PIN, 0);
+	gpio_pin_configure(gpio_1_ppg, PPG_EN0_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ppg, PPG_EN0_PIN, 0);
+	gpio_pin_configure(gpio_0_ppg, PPG_EN1_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_EN1_PIN, 0);
+	
+	gpio_pin_configure(gpio_0_ppg, PPG_SPI_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_SPI_CON_PIN, 0);
+	gpio_pin_configure(gpio_1_ppg, PPG_I2C_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ppg, PPG_I2C_CON_PIN, 0);
 
-	gpio_pin_configure(gpio_ppg, PPG_RST_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 0);
-
-	gpio_pin_configure(gpio_ppg, PPG_MFIO_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 0);
+	gpio_pin_configure(gpio_0_ppg, PPG_RST_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 0);
+	gpio_pin_configure(gpio_0_ppg, PPG_MFIO_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 0);
 }
 
 static void sh_init_i2c(void)
@@ -164,60 +172,54 @@ static void sh_init_gpio(void)
 {
 	gpio_flags_t flag = GPIO_INPUT|GPIO_PULL_UP;
 
-	if(gpio_ppg == NULL)
-		gpio_ppg = DEVICE_DT_GET(PPG_PORT);
+	if(gpio_0_ppg == NULL)
+		gpio_0_ppg = DEVICE_DT_GET(PPG_PORT0);
+	if(gpio_1_ppg == NULL)
+		gpio_1_ppg = DEVICE_DT_GET(PPG_PORT1);
 
-#if 0	//xb add 20230228 Set the PPG interrupt pin as input to prevent leakage.
-	//interrupt
-	gpio_pin_configure(gpio_ppg, PPG_INT_PIN, flag);
-	gpio_pin_interrupt_configure(gpio_ppg, PPG_INT_PIN, GPIO_INT_DISABLE);
-	gpio_init_callback(&gpio_cb, interrupt_event, BIT(PPG_INT_PIN));
-	gpio_add_callback(gpio_ppg, &gpio_cb);
-	gpio_pin_interrupt_configure(gpio_ppg, PPG_INT_PIN, GPIO_INT_ENABLE|GPIO_INT_EDGE_FALLING);
-#else
-	gpio_pin_configure(gpio_ppg, PPG_INT_PIN, GPIO_INPUT);
-#endif	
-	gpio_pin_configure(gpio_ppg, PPG_EN_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_EN_PIN, 1);
+	gpio_pin_configure(gpio_1_ppg, PPG_EN0_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ppg, PPG_EN0_PIN, 1);
+	gpio_pin_configure(gpio_0_ppg, PPG_EN1_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_EN1_PIN, 1);
+	
 	k_sleep(K_MSEC(20));
 
-	gpio_pin_configure(gpio_ppg, PPG_I2C_EN_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, PPG_I2C_EN_PIN, 1);
+	gpio_pin_configure(gpio_0_ppg, PPG_SPI_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ppg, PPG_SPI_CON_PIN, 0);
+	gpio_pin_configure(gpio_1_ppg, PPG_I2C_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ppg, PPG_I2C_CON_PIN, 1);
 
-	gpio_pin_configure(gpio_ppg, 29, GPIO_OUTPUT);
-	gpio_pin_set(gpio_ppg, 29, 1);
-	
 	//PPG模式选择(bootload\application)
-	gpio_pin_configure(gpio_ppg, PPG_RST_PIN, GPIO_OUTPUT);
-	gpio_pin_configure(gpio_ppg, PPG_MFIO_PIN, GPIO_OUTPUT);
+	gpio_pin_configure(gpio_0_ppg, PPG_RST_PIN, GPIO_OUTPUT);
+	gpio_pin_configure(gpio_0_ppg, PPG_MFIO_PIN, GPIO_OUTPUT);
 }
 
 void SH_mfio_to_low_and_keep(int waitDurationInUs)
 {
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 0);
 	wait_us(waitDurationInUs);
 }
 
 void SH_pull_mfio_to_high (void)
 {
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 1);
 }
 
 void SH_rst_to_BL_mode(void)
 {
 	//set all high
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 1);
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 1);
 	k_sleep(K_MSEC(10));
 
 	//set mfio low
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 0);
 	k_sleep(K_MSEC(10));
 
 	//reset sensor hub
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 0);
 	k_sleep(K_MSEC(100));
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 1);
 	
 	//enter bootloader mode
 	int s32_status = sh_put_in_bootloader();
@@ -230,7 +232,7 @@ void SH_rst_to_BL_mode(void)
 	}
 
 	k_sleep(K_MSEC(50));
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 1);
 
 #ifdef MAX_DEBUG
 	LOGD("set bl mode success!");
@@ -240,12 +242,12 @@ void SH_rst_to_BL_mode(void)
 void SH_set_to_APP_mode(void)
 {
 	//set rst low and mfio high
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 0);
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 1);
 	wait_ms(10);
 
 	//set rst high
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 1);
 	wait_ms(50);
 	
 	//enter application mode end delay for initialization finishes
@@ -256,12 +258,12 @@ void SH_set_to_APP_mode(void)
 void SH_rst_to_APP_mode(void)
 {
 	//set rst low and mfio high
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 0);
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 1);
 	wait_ms(10);
 
 	//set rst high
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 1);
 	wait_ms(50);
 	
 	//enter application mode end delay for initialization finishes
@@ -275,12 +277,12 @@ void SH_rst_to_APP_mode(void)
 void SH_to_APP_from_BL_timing_out(void)
 {
 	//set rst and mfio low
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 0);
-	gpio_pin_set(gpio_ppg, PPG_MFIO_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_MFIO_PIN, 0);
 	k_sleep(K_MSEC(10));
 
 	//set rst high
-	gpio_pin_set(gpio_ppg, PPG_RST_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_RST_PIN, 1);
 	k_sleep(K_MSEC(50));
 
 	//If no I2C commands are sent to the AlgoHub within the next 1s, 
@@ -506,9 +508,9 @@ int32_t sh_get_hub_fw_version(uint8_t* fw_version)
 
 int sh_set_sensorhub_active(void)
 {
-	gpio_pin_set(gpio_ppg, PPG_INT_PIN, 0);
+	gpio_pin_set(gpio_0_ppg, PPG_INT_PIN, 0);
 	k_sleep(K_MSEC(10));
-	gpio_pin_set(gpio_ppg, PPG_INT_PIN, 1);
+	gpio_pin_set(gpio_0_ppg, PPG_INT_PIN, 1);
 }
 
 int sh_set_sensorhub_sleep(void)
@@ -1366,7 +1368,6 @@ end:
 	sprintf(buffer, "%s%s", COM_PPG_GET_INFOR, g_ppg_ver);
 	MapcsSendData(UART_DATA_PPG, buffer, strlen(buffer));
 	
-	PPG_i2c_off();
 	PPG_Disable();
 	return true;
 }

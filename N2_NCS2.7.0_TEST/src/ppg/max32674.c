@@ -606,7 +606,6 @@ void PPGStartCheck(void)
 	scc_check_sum = SCC_COMPARE_MAX;
 	
 	PPG_Enable();
-	PPG_i2c_on();
 	
 	ppg_power_flag = 1;
 
@@ -629,8 +628,6 @@ void PPGStopCheck(void)
 	sensorhub_disable_sensor();
 	sensorhub_disable_algo();
 
-	PPG_i2c_off();
-	//PPG_Power_Off();
 	PPG_Disable();
 
 	ppg_power_flag = 0;
@@ -665,7 +662,6 @@ void PPGStopBptCal(void)
 	sensorhub_disable_sensor();
 	sensorhub_disable_algo();
 
-	PPG_i2c_off();
 	PPG_Disable();
 
 	ppg_power_flag = 0;

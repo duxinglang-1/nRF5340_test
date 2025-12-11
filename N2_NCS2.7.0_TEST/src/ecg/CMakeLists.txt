@@ -6,4 +6,5 @@
 
 zephyr_include_directories(.)
 target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ecg.c)
+target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/max86176.c)
 target_sources(app PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/ads1292.c)

@@ -341,7 +341,6 @@ void SH_OTA_upgrade_ok(uint8_t *data, uint32_t len)
 {
 	uint8_t buffer[64] = {0};
 	
-	PPG_i2c_off();
 	PPG_Disable();
 
 	sprintf(buffer, "%s%s", COM_PPG_UPGRADE_OK, data);
@@ -350,7 +349,6 @@ void SH_OTA_upgrade_ok(uint8_t *data, uint32_t len)
 
 void SH_OTA_upgrade_fail(void)
 {
-	PPG_i2c_off();
 	PPG_Disable();
 
 	MapcsSendData(UART_DATA_PPG, COM_PPG_UPGRADE_FAIL, strlen(COM_PPG_UPGRADE_FAIL));
