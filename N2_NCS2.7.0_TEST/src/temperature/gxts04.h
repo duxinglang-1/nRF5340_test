@@ -23,10 +23,8 @@
 #define TEMP_PORT	""
 #endif
 
-#define TEMP_ALRTB		7
-#define TEMP_EINT		8
-#define TEMP_SCL		31
-#define TEMP_SDA		30
+#define TEMP_SCL		4
+#define TEMP_SDA		5
 
 #define GXTS04_ID	0x20F0
 
