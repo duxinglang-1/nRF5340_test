@@ -17,7 +17,7 @@
 #include "uart.h"
 #include "logger.h"
 
-//#define MAX_DEBUG
+#define MAX_DEBUG
 
 #define MAX630FTHR       1
 #define ME15_DEV_MRD103  0

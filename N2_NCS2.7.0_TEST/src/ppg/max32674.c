@@ -26,7 +26,7 @@
 #endif
 #include "logger.h"
 
-//#define PPG_DEBUG
+#define PPG_DEBUG
 
 #define PPG_HR_COUNT_MAX		10
 #define PPG_HR_DEL_MIN_NUM		6

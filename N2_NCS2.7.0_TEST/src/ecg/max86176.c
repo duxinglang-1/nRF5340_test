@@ -142,7 +142,6 @@ static void ECG_CS_HIGH(void)
 
 void ECG_Int_Event(void)
 {
-	LOG_INF("INT Event");
 	ecg_int_flag = true;
 }
 
@@ -249,7 +248,7 @@ static void Sensor_Init(void) // call this on power up
 
 	Max86176_ReadReg(0xff, 1, &part_id);
 #ifdef MAX86176_DEBUG
-	LOG_INF("ID:%d", part_id);
+	LOGD("ID:%d", part_id);
 #endif
 	if (part_id != MAX86176_PART_ID)
 		return;
@@ -259,7 +258,7 @@ static void Sensor_Init(void) // call this on power up
 	{
 		Max86176_ReadReg(0x10, 1, &gReadBuf[0]);
 	#ifdef MAX86176_DEBUG
-		LOG_INF("reset:%d", gReadBuf[0]);
+		LOGD("reset:%d", gReadBuf[0]);
 	#endif
 		if((gReadBuf[0] & 0x01) == 0x00) // This bit then automatically becomes ‘0’ after thereset sequence is completed.
 			break;
@@ -268,10 +267,14 @@ static void Sensor_Init(void) // call this on power up
 	uint8_t readbuf[6];					// 存储6个寄存器的数据
 	Max86176_ReadReg(0x00, 6, readbuf); // 从0x00开始读6字节
 
-	LOG_INF("Reg0 0x%02X, 0x%02X,0x%02X, 0x%02X,0x%02X, 0x%02X\n", readbuf[0], readbuf[1], readbuf[2], readbuf[3], readbuf[4], readbuf[5]);
+#ifdef MAX86176_DEBUG
+	LOGD("Reg0 0x%02X, 0x%02X,0x%02X, 0x%02X,0x%02X, 0x%02X\n", readbuf[0], readbuf[1], readbuf[2], readbuf[3], readbuf[4], readbuf[5]);
+#endif
 
 	Max86176_WriteReg(0x10, 0);
-	LOG_INF("Max86176_Init");
+#ifdef MAX86176_DEBUG
+	LOGD("Max86176_Init");
+#endif
 	// Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf);			  // 连续读6个状态寄存器的值， read and clear all status registers
 	Max86176_WriteReg(0x0d, AFE_FIFO_SIZE - NUM_SAMPLES_PER_INT); // 设置FIFO数量，FIFO_A_FULL; assert A_FULL on NUM_SAMPLES_PER_INT samples
 	Max86176_WriteReg(0x12, ((gUseEcgPpgTime ? 1 : 0) << 2));	  // 配置PPG的时序数据到FIFO中，PPG_TIMING_DATA; note that the initial PPG frames may not have an associated ECG sample if they come before the ECG samples have started
@@ -284,26 +287,34 @@ static void Sensor_Init(void) // call this on power up
 	Max86176_WriteReg(0x19, 0x9F);
 	uint8_t s19 = 0;
 	Max86176_ReadReg(0x19, 1, &s19); // 读取Status 5寄存器(0x04)
-	LOG_INF("s19  : 0x%02X", s19);
-
+#ifdef MAX86176_DEBUG	
+	LOGD("s19  : 0x%02X", s19);
+#endif
 	Max86176_WriteReg(0x1A, 0x3F);
 	uint8_t s1a = 0;
 	Max86176_ReadReg(0x1A, 1, &s1a); // 读取Status 5寄存器(0x04)
-	LOG_INF("s1a  : 0x%02X", s1a);
+#ifdef MAX86176_DEBUG
+	LOGD("s1a  : 0x%02X", s1a);
+#endif
 	Max86176_WriteReg(0x18, 0x1); // PLL_LOCK_WNDW | PLL_EN
 
 	uint8_t pll_status = 0;
 	Max86176_ReadReg(0x04, 1, &pll_status); // 读取Status 5寄存器(0x04)
-
-	LOG_INF("read pll begin");
+#ifdef MAX86176_DEBUG
+	LOGD("read pll begin");
+#endif
 	while (!(pll_status & 0x02))
 	{
+	#ifdef MAX86176_DEBUG
 		LOG_INF("pll_status : 0x%02X", pll_status);
+	#endif
 		ECG_Sleep_ms(100);
 		Max86176_ReadReg(0x04, 1, &pll_status); // 读取Status 5寄存器(0x04)
 	}
 
-	LOG_INF("read pll end");
+#ifdef MAX86176_DEBUG
+	LOGD("read pll end");
+#endif
 	// ECG (32.768kHz*(0x1f+289)/(0x13f+1)/64=512Sps)
 	// Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 2); // 打开ECG，并且设置ECG的采样率 ECG_EN | ECG_DEC_RATE 采样频率为512sps
 	Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 4); // 修改采样率为128sps
@@ -757,7 +768,9 @@ static void log_consumer_thread(void *p1, void *p2, void *p3)
 			ECG_IIR_FIR_Filter(curr_sample, &ECGFilteredData[1]);
 			ECGFilteredData[1] = ECG_SavitzkyGolay_Filter(ECGFilteredData[1]);
 			 QRS_Algorithm_Interface(ECGFilteredData[1]);
-			LOG_INF(" HEART_ECGDATA: %ld", QRS_Heart_Rate);
+		#ifdef MAX86176_DEBUG
+			LOGD(" HEART_ECGDATA: %ld", QRS_Heart_Rate);
+		#endif
 			//LOG_INF("TI_FILTER_ECGDATA: %d", ECGFilteredData[1]);
 
 			// baseline_filter((double)ecgInputValue, 50.0, 40.0, 1.0, 1.0, 128.0,
@@ -800,8 +813,10 @@ void Max86176_onAfeInt(void) // call this on AFE interrupt
 	uint8_t data0, data1, data2, sampleIx[NUM_ADC] = {0}, tag;;
 	uint16_t readBufIx = 0; 
 
+#ifdef MAX86176_DEBUG
 	LOGD("begin");
-	
+#endif
+
 	Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf); // read and clear all status registers
 	// LOG_INF("gReadBuf[0]:%d", gReadBuf[0]);
 	if (!(gReadBuf[0] & 0x80)) // FIFO满的标志位  check A_FULL bit
@@ -809,13 +824,16 @@ void Max86176_onAfeInt(void) // call this on AFE interrupt
 	// LOG_INF("zhongduan22222");
 	Max86176_ReadReg(0x0a, 2, gReadBuf);						// read FIFO_DATA_COUNT
 	uint32_t count = ((gReadBuf[0] & 0x80) << 1) | gReadBuf[1]; // FIFO_DATA_COUNT will be >= NUM_SAMPLES_PER_INT
+#ifdef MAX86176_DEBUG
 	LOGD("count:%d", count);
-
+#endif
 	Max86176_ReadReg(0x0c, count * NUM_BYTES_PER_SAMPLE, gReadBuf); // read FIFO_DATA
 	for(readBufIx = 0;readBufIx < (count*NUM_BYTES_PER_SAMPLE);readBufIx += NUM_BYTES_PER_SAMPLE) // parse the FIFO data
 	{
 		tag = (gReadBuf[readBufIx] >> 4) & 0xf;
+	#ifdef MAX86176_DEBUG
 		LOGD("readBufIx:%d, tag:%d", readBufIx, tag);
+	#endif
 	#if 0	//xb test 2025-11-28	
 		if(0)//((tag <= TAG_PPG_MAX) && ((gUseEcg && gUseEcgPpgTime && gEcgPpgTimeOccurred) || !(gUseEcg && gUseEcgPpgTime)))
 		{
@@ -876,8 +894,10 @@ void Max86176_onAfeInt(void) // call this on AFE interrupt
 		}
 	#endif	
 	}
-	
+
+#ifdef MAX86176_DEBUG	
 	LOGD("end");
+#endif
 	// Process adcCountArr[][] here. sampleIx[] tells how many samples are in each adcCountArr[].
 	// If sampleIx[IX_PPG]!=0 && gPpgFrameItemCount!=0, the complete frame has not been read (it will be complete on the next FIFO read), so account for that in the processing.
 	// The shorter the delay between the HW interrupt and calling this function, and the more PPG measurements to be made, the higher the likelihood that the PPG frame may not be complete on this read.
@@ -941,7 +961,9 @@ void Max86176_Msg_Process(void)
 {
 	if(ecg_int_flag)
 	{
+	#ifdef MAX86176_DEBUG
 		LOGD("ecg int!");
+	#endif
 		//ECG_Disable_int();
 		ecg_int_flag = false;
 		//Max86176_onAfeInt();

@@ -14,7 +14,7 @@
 #include "transfer_cache.h"
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(E2, CONFIG_LOG_DEFAULT_LEVEL);
+LOG_MODULE_REGISTER(N2, CONFIG_LOG_DEFAULT_LEVEL);
 
 static uint8_t logbuf[4096] = {0};
 

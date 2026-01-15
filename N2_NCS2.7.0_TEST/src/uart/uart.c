@@ -27,7 +27,7 @@
 #include "esp8266.h"
 #endif
 
-//#define UART_DEBUG
+#define UART_DEBUG
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay)
 #define MAPCS_DEV DT_NODELABEL(uart0)
@@ -36,10 +36,10 @@
 #define MAPCS_DEV	""
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio1), okay)
-#define MAPCS_PORT DT_NODELABEL(gpio1)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
+#define MAPCS_PORT DT_NODELABEL(gpio0)
 #else
-#error "gpio1 devicetree node is disabled"
+#error "gpio0 devicetree node is disabled"
 #define MAPCS_PORT	""
 #endif
 
@@ -50,8 +50,8 @@
 #define WIFI_DEV	""
 #endif
 
-#define MAPCS_INT_PIN		8
-#define MAPCS_WAKE_PIN		3
+#define MAPCS_INT_PIN		3
+#define MAPCS_WAKE_PIN		8
 
 #define BUF_MAXSIZE	2048
 
@@ -271,7 +271,7 @@ void MapcsSendData(UART_DATA_TYPE type, uint8_t *data, uint32_t datalen)
 	int ret;
 	uint8_t head_len, *ptr;
 
-	ptr = k_malloc(datalen);
+	ptr = k_malloc(datalen+UART_DATA_HEAD_MAX_LEN);
 	if(ptr != NULL)
 	{
 		memset(ptr, 0x00, datalen);

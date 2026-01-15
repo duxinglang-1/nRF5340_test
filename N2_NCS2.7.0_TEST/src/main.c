@@ -36,7 +36,7 @@ void system_init(void)
 	PPG_init();
 #endif
 #ifdef CONFIG_ECG_SUPPORT
-	ECG_init();
+	//ECG_init();
 #endif
 #ifdef CONFIG_WIFI_SUPPORT
 	wifi_init();
