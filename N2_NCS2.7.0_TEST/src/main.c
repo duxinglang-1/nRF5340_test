@@ -29,9 +29,12 @@ static bool sys_pwron_completed_flag = false;
 
 void system_init(void)
 {
+	uart_init();
+
 	InitSystemSettings();
 
-	uart_init();
+	k_sleep(K_MSEC(100));
+
 #ifdef CONFIG_PPG_SUPPORT	
 	PPG_init();
 #endif
