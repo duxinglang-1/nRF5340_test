@@ -26,7 +26,7 @@
 #endif
 #include "logger.h"
 
-#define PPG_DEBUG
+//#define PPG_DEBUG
 
 #define PPG_HR_COUNT_MAX		10
 #define PPG_HR_DEL_MIN_NUM		6
@@ -167,7 +167,7 @@ bool PPGSenSorSet(void)
 				g_ppg_bpt_status = BPT_STATUS_GET_CAL;
 
 				k_timer_start(&ppg_get_hr_timer, K_MSEC(200), K_MSEC(200));
-				return;
+				return true;
 			}
 		}
 		else
@@ -716,6 +716,13 @@ void UartPPGEventHandle(uint8_t *data, uint32_t data_len)
 		else if((ptr1 = strstr(ptr, COM_PPG_SET_CLOSE)) != NULL)
 		{
 			PPGStopCheck();
+		}
+		else if((ptr1 = strstr(ptr, COM_PPG_GET_INFOR)) != NULL)
+		{
+			uint8_t buffer[64] = {0};
+			
+			sprintf(buffer, "%s%s", COM_PPG_GET_INFOR, g_ppg_ver);
+			MapcsSendData(UART_DATA_PPG, buffer, strlen(buffer));
 		}
 		else if((ptr1 = strstr(ptr, COM_PPG_UPGRADE)) != NULL)
 		{
