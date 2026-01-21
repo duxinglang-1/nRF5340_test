@@ -38,6 +38,9 @@ void system_init(void)
 #ifdef CONFIG_ECG_SUPPORT
 	//ECG_init();
 #endif
+#ifdef CONFIG_TEMP_SUPPORT
+	temp_init();
+#endif
 #ifdef CONFIG_WIFI_SUPPORT
 	wifi_init();
 #endif
@@ -69,9 +72,9 @@ void system_init_completed(void)
 }
 
 /***************************************************************************
-* Ãè  Êö : mainº¯Êı 
-* Èë  ²Î : ÎŞ 
-* ·µ»ØÖµ : int ÀàĞÍ
+* æ  è¿° : mainå‡½æ•° 
+* å…¥  å‚ : æ—  
+* è¿”å›å€¼ : int ç±»å‹
 **************************************************************************/
 int main(void)
 {

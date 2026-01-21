@@ -120,6 +120,9 @@ void UartTempEventHandle(uint8_t *data, uint32_t data_len)
 
 void temp_init(void)
 {
+	uint8_t buffer[16] = {0};
+	uint32_t len;
+
 #ifdef TEMP_GXTS04
 	temp_check_ok = gxts04_init(&sensor_id);
 #elif defined(TEMP_MAX30208)
@@ -127,6 +130,15 @@ void temp_init(void)
 #elif defined(TEMP_CT1711)
 	temp_check_ok = ct1711_init();
 #endif
+
+#ifdef TEMP_DEBUG
+	LOGD("id:0x%x", sensor_id);
+#endif
+
+	strcpy(buffer, COM_TEMP_GET_INFOR);
+	len = strlen(COM_TEMP_GET_INFOR);
+	memcpy(&buffer[len], &sensor_id, sizeof(sensor_id));
+	MapcsSendData(UART_DATA_TEMP, buffer, len+sizeof(sensor_id));
 }
 
 void TempMsgProcess(void)
