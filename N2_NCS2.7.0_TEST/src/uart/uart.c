@@ -27,7 +27,7 @@
 #include "esp8266.h"
 #endif
 
-#define UART_DEBUG
+//#define UART_DEBUG
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(uart0), okay)
 #define MAPCS_DEV DT_NODELABEL(uart0)
@@ -53,7 +53,7 @@
 #define MAPCS_INT_PIN		3
 #define MAPCS_WAKE_PIN		8
 
-#define BUF_MAXSIZE	2048
+#define BUF_MAXSIZE	4096
 
 #ifdef CONFIG_PM_DEVICE
 bool uart_mapcs_sleep_flag = false;
@@ -141,23 +141,9 @@ K_TIMER_DEFINE(uart_wifi_sleep_in_timer, UartWifiSleepInCallBack, NULL);
 
 void copcs_wakeup_MCU(void)
 {
-	if(!gpio_mapcs)
-	{
-		gpio_mapcs = DEVICE_DT_GET(MAPCS_PORT);
-		if(!gpio_mapcs)
-		{
-		#ifdef UART_DEBUG
-			LOGD("Cannot bind gpio device");
-		#endif
-			return;
-		}
-
-		gpio_pin_configure(gpio_mapcs, MAPCS_WAKE_PIN, GPIO_OUTPUT);
-	}
-
-	gpio_pin_set(gpio_mapcs, MAPCS_WAKE_PIN, 1);
-	k_sleep(K_MSEC(10));
 	gpio_pin_set(gpio_mapcs, MAPCS_WAKE_PIN, 0);
+	k_sleep(K_MSEC(5));
+	gpio_pin_set(gpio_mapcs, MAPCS_WAKE_PIN, 1);
 }
 
 static void uart_send_data_handle(struct device *dev, uint8_t *buffer, uint32_t datalen)
@@ -169,8 +155,11 @@ static void uart_send_data_handle(struct device *dev, uint8_t *buffer, uint32_t 
 	uart_sleep_out(dev);
 #endif
 
-#ifdef UART_DEBUG
-	LOGD("len:%d, data:%s", datalen, buffer);
+#if 0//def UART_DEBUG
+	if(dev == uart_mapcs)
+		LOGD("To 9151 len:%d, data:%s", datalen, buffer);
+	else if(dev == uart_wifi)
+		LOGD("To wifi len:%d, data:%s", datalen, buffer);
 #endif
 
 	uart_fifo_fill(dev, buffer, datalen);
@@ -179,57 +168,51 @@ static void uart_send_data_handle(struct device *dev, uint8_t *buffer, uint32_t 
 
 static void uart_receive_data_handle(struct device *dev, uint8_t *data, uint32_t datalen)
 {
-	uint32_t data_len = 0;
-
-#ifdef UART_DEBUG
-	LOGD("uart rece data!");
-#endif
-
 	if(dev == uart_wifi)
 	{
-		wifi_receive_data_handle(data, data_len);
+		wifi_receive_data_handle(data, datalen);
 	}
 	else if(dev == uart_mapcs)
 	{
 	#ifdef CONFIG_PPG_SUPPORT
 		if(strncmp(data, PPG_DATA_HEAD, strlen(PPG_DATA_HEAD)) == 0)
 		{
-			UartPPGEventHandle(data, data_len);
+			UartPPGEventHandle(data, datalen);
 		}
 	#endif
 
 	#ifdef CONFIG_ECG_SUPPORT
 		if(strncmp(data, ECG_DATA_HEAD, strlen(ECG_DATA_HEAD)) == 0)
 		{
-			UartECGEventHandle(data, data_len);
+			UartECGEventHandle(data, datalen);
 		}
 	#endif
 
 	#ifdef CONFIG_TEMP_SUPPORT
 		if(strncmp(data, TEMP_DATA_HEAD, strlen(TEMP_DATA_HEAD)) == 0)
 		{
-			UartTempEventHandle(data, data_len);
+			UartTempEventHandle(data, datalen);
 		}
 	#endif
 
 	#ifdef CONFIG_WIFI_SUPPORT	
 		if(strncmp(data, WIFI_DATA_HEAD, strlen(WIFI_DATA_HEAD)) == 0)
 		{
-			UartWifiEventHandle(data, data_len);
+			UartWifiEventHandle(data, datalen);
 		}
 	#endif
 
 	#ifdef CONFIG_AUDIO_SUPPORT
 		if(strncmp(data, AUDIO_DATA_HEAD, strlen(AUDIO_DATA_HEAD)) == 0)
 		{
-			UartAudioEventHandle(data, data_len);
+			UartAudioEventHandle(data, datalen);
 		}
 	#endif
 
 	#ifdef CONFIG_BLE_SUPPORT
 		if(strncmp(data, BLE_DATA_HEAD, strlen(BLE_DATA_HEAD)) == 0)
 		{
-			UartBleEventHandle(data, data_len);
+			UartBleEventHandle(data, datalen);
 		}
 	#endif
 	}
@@ -249,13 +232,13 @@ void UartMapcsSendData(void)
 	#endif
 		uart_send_data_handle(uart_mapcs, p_data, data_len);
 		delete_data_from_cache(&uart_mapcs_send_cache);
-		k_timer_start(&uart_mapcs_send_data_timer, K_MSEC(50), K_NO_WAIT);
+		k_timer_start(&uart_mapcs_send_data_timer, K_MSEC(20), K_NO_WAIT);
 	}
 }
 
 void UartMapcsSendDataStart(void)
 {
-	k_timer_start(&uart_mapcs_send_data_timer, K_MSEC(50), K_NO_WAIT);
+	k_timer_start(&uart_mapcs_send_data_timer, K_MSEC(20), K_NO_WAIT);
 }
 
 bool MapcsSendCacheIsEmpty(void)
@@ -274,7 +257,7 @@ void MapcsSendData(UART_DATA_TYPE type, uint8_t *data, uint32_t datalen)
 	ptr = k_malloc(datalen+UART_DATA_HEAD_MAX_LEN);
 	if(ptr != NULL)
 	{
-		memset(ptr, 0x00, datalen);
+		memset(ptr, 0x00, datalen+UART_DATA_HEAD_MAX_LEN);
 		
 		switch(type)
 		{
@@ -324,13 +307,13 @@ void UartMapcsReceData(void)
 	{
 		uart_receive_data_handle(uart_mapcs, p_data, data_len);
 		delete_data_from_cache(&uart_mapcs_rece_cache);
-		k_timer_start(&uart_mapcs_rece_data_timer, K_MSEC(50), K_NO_WAIT);
+		k_timer_start(&uart_mapcs_rece_data_timer, K_MSEC(20), K_NO_WAIT);
 	}
 }
 
 void MapcsReceDataStart(void)
 {
-	k_timer_start(&uart_mapcs_rece_data_timer, K_MSEC(50), K_NO_WAIT);
+	k_timer_start(&uart_mapcs_rece_data_timer, K_MSEC(20), K_NO_WAIT);
 }
 
 bool MapcsReceCacheIsEmpty(void)
@@ -364,7 +347,7 @@ static void uart_mapcs_cb(struct device *x)
 		while((len = uart_fifo_read(x, &uart_mapcs_rx_buf[uart_mapcs_rece_len], BUF_MAXSIZE-uart_mapcs_rece_len)) > 0)
 		{
 			uart_mapcs_rece_len += len;
-			k_timer_start(&uart_mapcs_rece_frame_timer, K_MSEC(20), K_NO_WAIT);
+			k_timer_start(&uart_mapcs_rece_frame_timer, K_MSEC(10), K_NO_WAIT);
 		}
 	}
 	
@@ -417,13 +400,13 @@ void UartWifiSendData(void)
 	#endif
 		uart_send_data_handle(uart_wifi, p_data, data_len);
 		delete_data_from_cache(&uart_wifi_send_cache);
-		k_timer_start(&uart_wifi_send_data_timer, K_MSEC(50), K_NO_WAIT);
+		k_timer_start(&uart_wifi_send_data_timer, K_MSEC(20), K_NO_WAIT);
 	}
 }
 
 void UartWifiSendDataStart(void)
 {
-	k_timer_start(&uart_wifi_send_data_timer, K_MSEC(50), K_NO_WAIT);
+	k_timer_start(&uart_wifi_send_data_timer, K_MSEC(20), K_NO_WAIT);
 }
 
 bool WifiSendCacheIsEmpty(void)
@@ -454,13 +437,13 @@ void UartWifiReceData(void)
 	{
 		uart_receive_data_handle(uart_wifi, p_data, data_len);
 		delete_data_from_cache(&uart_wifi_rece_cache);
-		k_timer_start(&uart_wifi_rece_data_timer, K_MSEC(50), K_NO_WAIT);
+		k_timer_start(&uart_wifi_rece_data_timer, K_MSEC(20), K_NO_WAIT);
 	}
 }
 
 void WifiReceDataStart(void)
 {
-	k_timer_start(&uart_wifi_rece_data_timer, K_MSEC(50), K_NO_WAIT);
+	k_timer_start(&uart_wifi_rece_data_timer, K_MSEC(20), K_NO_WAIT);
 }
 
 bool WifiReceCacheIsEmpty(void)
@@ -494,7 +477,7 @@ static void uart_wifi_cb(struct device *x)
 		while((len = uart_fifo_read(x, &uart_wifi_rx_buf[uart_wifi_rece_len], BUF_MAXSIZE-uart_wifi_rece_len)) > 0)
 		{
 			uart_wifi_rece_len += len;
-			k_timer_start(&uart_wifi_rece_frame_timer, K_MSEC(20), K_NO_WAIT);
+			k_timer_start(&uart_wifi_rece_frame_timer, K_MSEC(10), K_NO_WAIT);
 		}
 	}
 	
@@ -588,9 +571,6 @@ void uart_sleep_in(struct device *dev)
 
 static void mapcs_interrupt_event(struct device *interrupt, struct gpio_callback *cb, uint32_t pins)
 {
-#ifdef UART_DEBUG
-	LOGD("begin");
-#endif
 	uart_mapcs_wake_flag = true;
 }
 
@@ -689,7 +669,7 @@ void uart_init(void)
 		return;
 	}	
 	gpio_pin_configure(gpio_mapcs, MAPCS_WAKE_PIN, GPIO_OUTPUT);
-	gpio_pin_set(gpio_mapcs, MAPCS_WAKE_PIN, 0);
+	gpio_pin_set(gpio_mapcs, MAPCS_WAKE_PIN, 1);
 
 #ifdef CONFIG_PM_DEVICE
 	gpio_pin_configure(gpio_mapcs, MAPCS_INT_PIN, flag);
