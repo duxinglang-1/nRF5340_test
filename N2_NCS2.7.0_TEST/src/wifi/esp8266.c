@@ -19,7 +19,6 @@
 //#define WIFI_DEBUG
 
 #define WIFI_EN_PIN		6
-#define WIFI_RST_PIN	21
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
 #define WIFI_RST_PORT DT_NODELABEL(gpio0)
@@ -50,6 +49,7 @@ bool wifi_is_on = false;
 
 static bool wifi_on_flag = false;
 static bool wifi_off_flag = false;
+static bool wifi_scan_flag = false;
 static bool wifi_rescanning_flag = false;
 static bool wifi_off_retry_flag = false;
 static bool wifi_off_ok_flag = false;
@@ -57,8 +57,10 @@ static bool wifi_get_infor_flag = false;
 
 static void WifiGetInforCallBack(struct k_timer *timer_id);
 K_TIMER_DEFINE(wifi_get_infor_timer, WifiGetInforCallBack, NULL);
-static void wifi_turn_off_timerout(struct k_timer *timer_id);
-K_TIMER_DEFINE(wifi_turn_off_timer, wifi_turn_off_timerout, NULL);
+static void WifiTurnOffCallBack(struct k_timer *timer_id);
+K_TIMER_DEFINE(wifi_turn_off_timer, WifiTurnOffCallBack, NULL);
+static void WifiDelayScanCallBack(struct k_timer *timer_id);
+K_TIMER_DEFINE(wifi_delay_scan_timer, WifiDelayScanCallBack, NULL);
 
 
 static void WifiGetInforCallBack(struct k_timer *timer_id)
@@ -66,15 +68,20 @@ static void WifiGetInforCallBack(struct k_timer *timer_id)
 	wifi_get_infor_flag = true;
 }
 
-static void wifi_turn_off_timerout(struct k_timer *timer_id)
+static void WifiTurnOffCallBack(struct k_timer *timer_id)
 {
 	wifi_off_flag = true;
+}
+
+static void WifiDelayScanCallBack(struct k_timer *timer_id)
+{
+	wifi_scan_flag = true;
 }
 
 /*============================================================================
 * Function Name  : Send_Cmd_To_Esp8285
 * Description    : 向ESP8265送命令
-* Input          : cmd:发送的命令字符串;waittime:等待时间(单位:10ms)
+* Input          : cmd:发送的命令字符串;waittime:等待时间(单位:ms)
 * Output         : None
 * Return         : None
 * CALL           : 可被外部调用
@@ -82,11 +89,14 @@ static void wifi_turn_off_timerout(struct k_timer *timer_id)
 void Send_Cmd_To_Esp8285(uint8_t *cmd, uint32_t WaitTime)
 {
 	WifiSendData(cmd, strlen(cmd));
+
+	if(WaitTime > 0)
+		k_sleep(K_MSEC(WaitTime));
 }
 
 /*============================================================================
 * Function Name  : wifi_enable
-* Description    : Esp8285_EN使能，高电平有效
+* Description    : Esp8285_EN使能，低电平有效
 * Input          : None
 * Output         : None
 * Return         : None
@@ -94,15 +104,12 @@ void Send_Cmd_To_Esp8285(uint8_t *cmd, uint32_t WaitTime)
 ==============================================================================*/
 void wifi_enable(void)
 {
-	gpio_pin_set(gpio_wifi_rst, WIFI_RST_PIN, 0);
-	k_sleep(K_MSEC(20));
-	gpio_pin_set(gpio_wifi_rst, WIFI_RST_PIN, 1);
-	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 1);
+	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 0);
 }
 
 /*============================================================================
 * Function Name  : wifi_disable
-* Description    : Esp8285_EN使能禁止，低电平有效
+* Description    : Esp8285_EN使能禁止，高电平有效
 * Input          : None
 * Output         : None
 * Return         : None
@@ -110,7 +117,7 @@ void wifi_enable(void)
 ==============================================================================*/
 void wifi_disable(void)
 {
-	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 0);
+	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 1);
 }
 
 /*============================================================================
@@ -124,11 +131,11 @@ void wifi_disable(void)
 void wifi_start_scanning(void)
 {
 	//设置工作模式 1:station模式 2:AP模式 3:兼容AP+station模式
-	Send_Cmd_To_Esp8285(WIFI_SET_MODE,100);
+	Send_Cmd_To_Esp8285(WIFI_SET_MODE, 100);
 	//设置AT+CWLAP信号的排序方式：按RSSI排序，只显示信号强度和MAC模式
-	Send_Cmd_To_Esp8285(WIFI_SET_AP_SCAN_OPT,50);
+	Send_Cmd_To_Esp8285(WIFI_SET_AP_SCAN_OPT, 50);
 	//启动扫描
-	Send_Cmd_To_Esp8285(WIFI_SET_AP_SCAN_START,0);
+	Send_Cmd_To_Esp8285(WIFI_SET_AP_SCAN_START, 0);
 }
 
 /*============================================================================
@@ -148,7 +155,7 @@ void wifi_turn_on_and_scanning(void)
 #endif
 
 	wifi_enable();
-	wifi_start_scanning();
+	k_timer_start(&wifi_delay_scan_timer, K_MSEC(500), K_NO_WAIT);
 }
 
 void wifi_turn_off_success(void)
@@ -157,7 +164,7 @@ void wifi_turn_off_success(void)
 	LOGD("begin");
 #endif
 
-	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 0);
+	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 1);
 	wifi_off_retry_flag = false;
 
 	wifi_is_on = false;
@@ -170,9 +177,6 @@ void wifi_turn_off(void)
 	LOGD("begin");
 #endif
 
-	if(!wifi_is_on)
-		return;
-	
 	wifi_is_on = false;
 	wifi_disable();
 	UartWifiOff();
@@ -184,7 +188,7 @@ void wifi_rescanning(void)
 		return;
 
 	//设置AT+CWLAP信号的排序方式：按RSSI排序，只显示信号强度和MAC模式
-	Send_Cmd_To_Esp8285(WIFI_SET_AP_SCAN_OPT,50);
+	Send_Cmd_To_Esp8285(WIFI_SET_AP_SCAN_OPT, 50);
 	Send_Cmd_To_Esp8285(WIFI_SET_AP_SCAN_START, 0);
 }
 
@@ -205,8 +209,8 @@ void wifi_receive_data_handle(uint8_t *buf, uint32_t len)
 	uint8_t *ptr2 = NULL;
 	bool flag = false;
 
-#ifdef WIFI_DEBUG	
-	LOGD("receive:%s", buf);
+#ifdef WIFI_DEBUG
+	LOGD("len:%d, rece:%s", len, buf);
 #endif
 
 	if((ptr = strstr(buf, WIFI_SLEEP_REPLY)) != NULL)
@@ -224,11 +228,11 @@ void wifi_receive_data_handle(uint8_t *buf, uint32_t len)
 		//\r\n
 		//OK
 		//\r\n
-		ptr1 = strstr(ptr, WIFI_DATA_MAC_BEGIN);
+		ptr1 = strstr(ptr, WIFI_SCAN_DATA_MAC_BEGIN);
 		if(ptr1)
 		{
 			ptr1++;
-			ptr2 = strstr(ptr1, WIFI_DATA_MAC_BEGIN);
+			ptr2 = strstr(ptr1, WIFI_SCAN_DATA_MAC_BEGIN);
 			if(ptr2)
 			{
 				memcpy(g_wifi_mac_addr, ptr1, ptr2-ptr1);
@@ -248,15 +252,15 @@ void wifi_receive_data_handle(uint8_t *buf, uint32_t len)
 		//Bin version(Wroom 02):1.6.2
 		//OK
 		//\r\n
-		ptr1 = strstr(ptr, WIFI_DATA_VER_BIN);
+		ptr1 = strstr(ptr, WIFI_GET_DATA_VER_BIN);
 		if(ptr1)
 		{
 			ptr1++;
-			ptr1 = strstr(ptr1, WIFI_DATA_SEP_COLON);
+			ptr1 = strstr(ptr1, WIFI_SCAN_DATA_SEP_COLON);
 			if(ptr1)
 			{
 				ptr1++;
-				ptr2 = strstr(ptr1, WIFI_DATA_END);
+				ptr2 = strstr(ptr1, WIFI_GET_DATA_END);
 				if(ptr2)
 				{
 					memcpy(g_wifi_ver, ptr1, ptr2-ptr1);
@@ -270,7 +274,7 @@ void wifi_receive_data_handle(uint8_t *buf, uint32_t len)
 		return;
 	}
 
-	if((ptr = strstr(buf,WIFI_DATA_HEAD)) != NULL)
+	if((ptr = strstr(buf,WIFI_SCAN_DATA_HEAD)) != NULL)
 	{
 		//+CWLAP:(-61,"f4:84:8d:8e:9f:eb")
 		//+CWLAP:(-67,"da:f1:5b:ff:f2:bc")
@@ -281,18 +285,18 @@ void wifi_receive_data_handle(uint8_t *buf, uint32_t len)
 		//\r\n
 		//OK
 		//\r\n
-		uint8_t *ptr;
+		uint8_t *pdata;
 		uint32_t com_len = strlen(COM_WIFI_GET_SCAN_AP);
 
-		ptr = k_malloc(com_len+len);
-		if(ptr != NULL)
+		pdata = k_malloc(com_len+len);
+		if(pdata != NULL)
 		{
-			memset(ptr, 0x00, com_len+len);
-			memcpy(ptr, COM_WIFI_GET_SCAN_AP, com_len);
-			memcpy(ptr+com_len, buf, len);
-			MapcsSendData(UART_DATA_WIFI, ptr, com_len+len);
+			memset(pdata, 0x00, com_len+len);
+			memcpy(pdata, COM_WIFI_GET_SCAN_AP, com_len);
+			memcpy(pdata+com_len, buf, len);
+			MapcsSendData(UART_DATA_WIFI, pdata, com_len+len);
 
-			k_free(ptr);
+			k_free(pdata);
 		}
 	}	
 }
@@ -301,7 +305,11 @@ void UartWifiEventHandle(uint8_t *data, uint32_t data_len)
 {
 	uint8_t *ptr;
 	uint8_t tmpbuf[256] = {0};
-	
+
+#ifdef WIFI_DEBUG
+	LOGD("len:%d, data:%s", data_len, data);
+#endif
+
 	if(data == NULL || data_len == 0)
 		return;
 
@@ -367,13 +375,16 @@ void WifiMsgProcess(void)
 		wifi_get_infor_flag = false;
 		wifi_get_infor();
 	}
+
+	if(wifi_scan_flag)
+	{
+		wifi_scan_flag = false;
+		wifi_start_scanning();
+	}
 	
 	if(wifi_on_flag)
 	{
 		wifi_on_flag = false;
-
-		if(wifi_is_on)
-			return;
 
 		if(k_timer_remaining_get(&wifi_turn_off_timer) > 0)
 			k_timer_stop(&wifi_turn_off_timer);
@@ -384,12 +395,12 @@ void WifiMsgProcess(void)
 	if(wifi_off_flag)
 	{
 		wifi_off_flag = false;
-
-		if(!wifi_is_on)
-			return;
+		wifi_scan_flag = false;
 		
 		wifi_turn_off();
-		
+
+		if(k_timer_remaining_get(&wifi_delay_scan_timer) > 0)
+			k_timer_stop(&wifi_delay_scan_timer);
 		if(k_timer_remaining_get(&wifi_turn_off_timer) > 0)
 			k_timer_stop(&wifi_turn_off_timer);
 	}
@@ -421,11 +432,11 @@ void WifiMsgProcess(void)
 void wifi_get_infor(void)
 {
 	//设置工作模式 1:station模式 2:AP模式 3:兼容AP+station模式
-	Send_Cmd_To_Esp8285(WIFI_SET_MODE,50);
+	Send_Cmd_To_Esp8285(WIFI_SET_MODE, 10);
 	//获取Mac地址
-	Send_Cmd_To_Esp8285(WIFI_GET_MAC_CMD,50);
+	Send_Cmd_To_Esp8285(WIFI_GET_MAC_CMD, 10);
 	//获取版本信息
-	Send_Cmd_To_Esp8285(WIFI_GET_VER,50);
+	Send_Cmd_To_Esp8285(WIFI_GET_VER, 0);
 
 	k_timer_start(&wifi_turn_off_timer, K_SECONDS(5), K_NO_WAIT);
 }
@@ -441,13 +452,8 @@ void wifi_init(void)
 	gpio_wifi_en = DEVICE_DT_GET(WIFI_EN_PORT);
 	gpio_wifi_rst = DEVICE_DT_GET(WIFI_RST_PORT);
 
-	gpio_pin_configure(gpio_wifi_rst, WIFI_RST_PIN, GPIO_OUTPUT);
 	gpio_pin_configure(gpio_wifi_en, WIFI_EN_PIN, GPIO_OUTPUT);
-
-	gpio_pin_set(gpio_wifi_rst, WIFI_RST_PIN, 0);
-	k_sleep(K_MSEC(20));
-	gpio_pin_set(gpio_wifi_rst, WIFI_RST_PIN, 1);
-	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 1);
+	gpio_pin_set(gpio_wifi_en, WIFI_EN_PIN, 0);
 
 	k_timer_start(&wifi_get_infor_timer, K_SECONDS(3), K_NO_WAIT);
 }
