@@ -15,14 +15,16 @@
 #include "uart.h"
 #include "logger.h"
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio1), okay)
-#define AUDIO_PORT DT_NODELABEL(gpio1)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
+#define AUDIO_PORT DT_NODELABEL(gpio0)
 #else
 #error "gpio0 devicetree node is disabled"
 #define AUDIO_PORT	""
 #endif
 
-#define WTN_DATA	1
+#define AUDIO_DEBUG
+
+#define WTN_DATA	16
 #define WTN_BUSY	0
 
 #define AUDIO_VOL_MAX	(0xEF)
@@ -181,13 +183,20 @@ void FallPlayAlarmEn(void)
 
 void AudioInterruptHandle(void)
 {
+#ifdef AUDIO_DEBUG
+	LOGD("begin");
+#endif
 	audio_trige_flag = true;
 }
 
 void UartAudioEventHandle(uint8_t *data, uint32_t data_len)
 {
 	uint8_t *ptr;
-	
+
+#ifdef AUDIO_DEBUG
+	LOGD("len:%d, data:%s", data_len, data);
+#endif
+
 	if(data == NULL || data_len == 0)
 		return;
 
@@ -207,6 +216,14 @@ void UartAudioEventHandle(uint8_t *data, uint32_t data_len)
 			ptr1 += strlen(COM_AUDIO_PLAY);
 			memcpy(buffer, ptr1, data_len-(ptr-data));
 			g_audio_song = atoi(buffer);
+		#ifdef AUDIO_DEBUG	
+			LOGD("song id:%d", g_audio_song);
+		#endif
+			audio_play_flag = true;
+		}
+		else if((ptr1 = strstr(ptr, CPM_AUDIO_REPEAT)) != NULL)
+		{
+			audio_repeat_flag = true;
 		}
 		else if((ptr1 = strstr(ptr, COM_AUDIO_STOP)) != NULL)
 		{
@@ -238,7 +255,7 @@ void UartAudioEventHandle(uint8_t *data, uint32_t data_len)
 //io¿Ú³õÊ¼»¯ 
 void audio_init(void)
 {
-	gpio_flags_t flag = GPIO_INPUT|GPIO_PULL_UP;
+	gpio_flags_t flag = GPIO_INPUT;
 	
 	gpio_audio = DEVICE_DT_GET(AUDIO_PORT);
 	if(gpio_audio == NULL)
@@ -300,6 +317,7 @@ void AudioMsgProcess(void)
 
 	if(audio_trige_flag)
 	{
+		MapcsSendData(UART_DATA_AUIOD, COM_AUDIO_COMPLETED, strlen(COM_AUDIO_COMPLETED));
 		audio_trige_flag = false;
 	}
 }
