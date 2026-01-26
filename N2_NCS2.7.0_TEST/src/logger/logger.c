@@ -14,9 +14,7 @@
 #include "transfer_cache.h"
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(N2, CONFIG_LOG_DEFAULT_LEVEL);
-
-static uint8_t logbuf[4096] = {0};
+LOG_MODULE_REGISTER(N2_5340, CONFIG_LOG_DEFAULT_LEVEL);
 
 void LOGDD(const char *fun_name, const char *fmt, ...)
 {
@@ -55,12 +53,6 @@ void LOGDD(const char *fun_name, const char *fmt, ...)
 		return;
 	}
 
-	if(n > 0)
-	{
-		*(buf + n) = '\n';
-		n++;
-		
-		LOG_INF("%s", buf);
-	}
+	LOG_INF("%s", buf);
 #endif	
 }
