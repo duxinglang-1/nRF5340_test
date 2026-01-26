@@ -155,7 +155,7 @@ static void uart_send_data_handle(struct device *dev, uint8_t *buffer, uint32_t 
 	uart_sleep_out(dev);
 #endif
 
-#if 0//def UART_DEBUG
+#ifdef UART_DEBUG
 	if(dev == uart_mapcs)
 		LOGD("To 9151 len:%d, data:%s", datalen, buffer);
 	else if(dev == uart_wifi)
@@ -541,7 +541,10 @@ void uart_sleep_out(struct device *dev)
 	pm_device_action_run(dev, PM_DEVICE_ACTION_RESUME);
 	
 #ifdef UART_DEBUG
-	LOGD("uart set active success!");
+	if(dev == uart_mapcs)
+		LOGD("uart for 9151 set active success!");
+	else if(dev == uart_wifi)
+		LOGD("uart for wifi set active success!");
 #endif
 }
 
@@ -565,7 +568,10 @@ void uart_sleep_in(struct device *dev)
 	pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
 
 #ifdef UART_DEBUG
-	LOGD("uart set low power success!");
+	if(dev == uart_mapcs)
+		LOGD("uart for 9151 set low power success!");
+	else if(dev == uart_wifi)
+		LOGD("uart for wifi set low power success!");
 #endif
 }
 
