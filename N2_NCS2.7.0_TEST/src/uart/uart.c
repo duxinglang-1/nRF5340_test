@@ -43,11 +43,13 @@
 #define MAPCS_PORT	""
 #endif
 
+#ifdef CONFIG_WIFI_SUPPORT
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(uart1), okay)
 #define WIFI_DEV DT_NODELABEL(uart1)
 #else
 #error "uart1 devicetree node is disabled"
 #define WIFI_DEV	""
+#endif
 #endif
 
 #define MAPCS_INT_PIN		3
@@ -168,11 +170,13 @@ static void uart_send_data_handle(struct device *dev, uint8_t *buffer, uint32_t 
 
 static void uart_receive_data_handle(struct device *dev, uint8_t *data, uint32_t datalen)
 {
+#ifdef CONFIG_WIFI_SUPPORT
 	if(dev == uart_wifi)
 	{
 		wifi_receive_data_handle(data, datalen);
 	}
 	else if(dev == uart_mapcs)
+#endif		
 	{
 	#ifdef CONFIG_PPG_SUPPORT
 		if(strncmp(data, PPG_DATA_HEAD, strlen(PPG_DATA_HEAD)) == 0)
@@ -530,6 +534,7 @@ void uart_sleep_out(struct device *dev)
 
 		uart_mapcs_is_waked = true;
 	}
+#ifdef CONFIG_WIFI_SUPPORT	
 	else if(dev == uart_wifi)
 	{
 		if(uart_wifi_is_waked)
@@ -537,7 +542,8 @@ void uart_sleep_out(struct device *dev)
 
 		uart_wifi_is_waked = true;
 	}
-	
+#endif
+
 	pm_device_action_run(dev, PM_DEVICE_ACTION_RESUME);
 	
 #ifdef UART_DEBUG
@@ -557,6 +563,7 @@ void uart_sleep_in(struct device *dev)
 
 		uart_mapcs_is_waked = false;
 	}
+#ifdef CONFIG_WIFI_SUPPORT	
 	else if(dev == uart_wifi)
 	{
 		if(!uart_wifi_is_waked)
@@ -564,7 +571,8 @@ void uart_sleep_in(struct device *dev)
 
 		uart_wifi_is_waked = false;
 	}
-	
+#endif
+
 	pm_device_action_run(dev, PM_DEVICE_ACTION_SUSPEND);
 
 #ifdef UART_DEBUG
@@ -633,7 +641,6 @@ static void UartWifiReceFrameCallBack(struct k_timer *timer_id)
 	UartWifiReceFrameData(uart_wifi_rx_buf, uart_wifi_rece_len);
 	uart_wifi_rece_len = 0;
 }
-#endif
 
 void UartWifiOff(void)
 {
@@ -645,6 +652,7 @@ void UartWifiOff(void)
 	uart_sleep_in(uart_wifi);
 #endif
 }
+#endif
 
 void uart_init(void)
 {
