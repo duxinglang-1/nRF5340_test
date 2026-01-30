@@ -15,8 +15,8 @@
 #include "uart.h"
 #include "logger.h"
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio0), okay)
-#define AUDIO_PORT DT_NODELABEL(gpio0)
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio1), okay)
+#define AUDIO_PORT DT_NODELABEL(gpio1)
 #else
 #error "gpio0 devicetree node is disabled"
 #define AUDIO_PORT	""
@@ -24,7 +24,7 @@
 
 #define AUDIO_DEBUG
 
-#define WTN_DATA	16
+#define WTN_DATA	1
 #define WTN_BUSY	0
 
 #define AUDIO_VOL_MAX	(0xEF)
