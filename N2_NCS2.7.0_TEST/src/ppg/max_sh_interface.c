@@ -1365,7 +1365,11 @@ bool sh_init_interface(void)
 	}
 
 end:
-	sprintf(buffer, "%s%s", COM_PPG_GET_INFOR, g_ppg_ver);
+	if(s32_status != SS_SUCCESS)
+		sprintf(buffer, "%s", COM_PPG_SET_CLOSE);
+	else
+		sprintf(buffer, "%s%s", COM_PPG_GET_INFOR, g_ppg_ver);
+	
 	MapcsSendData(UART_DATA_PPG, buffer, strlen(buffer));
 	
 	PPG_Disable();
