@@ -142,7 +142,4 @@
 	pinctrl-names = "default", "sleep";
 };
 
-&gpio_fwd{
-	status = "disabled";
-	/delete-node/ uart;
-};
+/delete-node/ &gpio_fwd;
