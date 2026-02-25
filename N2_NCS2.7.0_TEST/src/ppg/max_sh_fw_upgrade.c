@@ -577,7 +577,6 @@ void SH_OTA_upgrade_set_auth_bytes(uint8_t *data, uint32_t len)
 {
 	//Set auth bytes
 	int32_t s32_status;
-	uint8_t u8p_authData[BL_AES_AUTH_SIZE];
 	
 	s32_status = sh_set_bootloader_auth(data);
 	if(s32_status != SS_SUCCESS)
