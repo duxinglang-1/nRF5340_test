@@ -16,15 +16,17 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(N2_5340, CONFIG_LOG_DEFAULT_LEVEL);
 
+static uint8_t buf[LOG_BUFF_SIZE] = {0};
+
 void LOGDD(const char *fun_name, const char *fmt, ...)
 {
 	uint16_t str_len = 0;
 	int n = 0;
 	uint32_t timemap=0;
-	uint8_t buf[LOG_BUFF_SIZE] = {0};
 	va_list args;
 
 #ifdef TEST_DEBUG
+	memset(buf, 0x00, sizeof(buf));
 	timemap = (k_uptime_get()%1000);
 	va_start(args, fmt);
 	sprintf(buf, "[%04d-%02d-%02d %02d:%02d:%02d:%03d]..%s>>", 
