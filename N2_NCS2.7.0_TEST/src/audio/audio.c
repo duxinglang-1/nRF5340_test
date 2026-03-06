@@ -22,7 +22,7 @@
 #define AUDIO_PORT	""
 #endif
 
-#define AUDIO_DEBUG
+//#define AUDIO_DEBUG
 
 #define WTN_DATA	1
 #define WTN_BUSY	0
@@ -36,6 +36,9 @@ static bool audio_stop_flag = false;
 static bool audio_vol_inc_flag = false;
 static bool audio_vol_dec_flag = false;
 static bool audio_trige_flag = false;
+static bool audio_is_sleep = false;
+static bool audio_is_play = false;
+
 
 static uint8_t g_audio_vol = 0xEF;
 static uint8_t g_audio_song = 0;
@@ -96,12 +99,14 @@ void Volume_Control(unsigned char vol)  //E0  ------  EF
 void Voice_Start(uint8_t voice_addr)
 {
 	Audio_Send_ByteData(voice_addr);
+	audio_is_play = true;
 }
 
 //停止播放
 void Voice_Stop(void)
 {
 	Audio_Send_ByteData(0xFE);
+	audio_is_play = false;
 }
 
 //循环播放当前语音
@@ -109,6 +114,40 @@ void Voice_Loop(void)
 {	
 	Delay_us(400);
 	Audio_Send_ByteData(0xF2);
+}
+
+void audio_sleep(void)
+{
+#ifdef AUDIO_DEBUG	
+	LOGD("audio_is_sleep:%d", audio_is_sleep);
+#endif
+
+	if(!audio_is_sleep)
+	{
+		Audio_Send_ByteData(0xF0);
+		audio_is_sleep = true;
+		audio_is_play = false;
+	}
+}
+
+void audio_wakeup(void)
+{
+#ifdef AUDIO_DEBUG	
+	LOGD("audio_is_sleep:%d", audio_is_sleep);
+#endif
+
+	if(audio_is_sleep)
+	{
+		gpio_pin_set(gpio_audio, WTN_DATA, 0);
+		Delay_ms(5);
+		gpio_pin_set(gpio_audio, WTN_DATA, 1);
+		Delay_ms(100);
+		gpio_pin_set(gpio_audio, WTN_DATA, 0);
+		Delay_ms(6);
+		audio_is_sleep = false;
+		
+		Volume_Control(g_audio_vol);
+	}
 }
 
 //播放120报警声
@@ -203,6 +242,7 @@ void UartAudioEventHandle(uint8_t *data, uint32_t data_len)
 	ptr = strstr(data, AUDIO_DATA_HEAD);
 	if(ptr != NULL)
 	{
+		bool flag = false;
 		uint8_t *ptr1,*ptr2;
 
 		ptr += strlen(AUDIO_DATA_HEAD);
@@ -220,14 +260,17 @@ void UartAudioEventHandle(uint8_t *data, uint32_t data_len)
 			LOGD("song id:%d", g_audio_song);
 		#endif
 			audio_play_flag = true;
+			flag = true;
 		}
 		else if((ptr1 = strstr(ptr, CPM_AUDIO_REPEAT)) != NULL)
 		{
 			audio_repeat_flag = true;
+			flag = true;
 		}
 		else if((ptr1 = strstr(ptr, COM_AUDIO_STOP)) != NULL)
 		{
 			audio_stop();
+			flag = true;
 		}
 		else if((ptr1 = strstr(ptr, COM_AUDIO_PAUSE)) != NULL)
 		{
@@ -244,11 +287,16 @@ void UartAudioEventHandle(uint8_t *data, uint32_t data_len)
 		else if((ptr1 = strstr(ptr, COM_AUDIO_VOL_INC)) != NULL)
 		{
 			audio_vol_inc();
+			flag = true;
 		}
 		else if((ptr1 = strstr(ptr, COM_AUDIO_VOL_DEC)) != NULL)
 		{
 			audio_vol_dec();
+			flag = true;
 		}
+
+		if(flag)
+			audio_wakeup();
 	}
 }
 
@@ -272,11 +320,23 @@ void audio_init(void)
     gpio_pin_interrupt_configure(gpio_audio, WTN_BUSY, GPIO_INT_ENABLE|GPIO_INT_EDGE_RISING);
 
 	Volume_Control(g_audio_vol);
-	Delay_ms(100);
+	audio_sleep();
 }
 
 void AudioMsgProcess(void)
 {
+	if(audio_trige_flag)
+	{
+		if(audio_is_play)
+		{
+			audio_is_play = false;
+			audio_sleep();
+			MapcsSendData(UART_DATA_AUIOD, COM_AUDIO_COMPLETED, strlen(COM_AUDIO_COMPLETED));
+		}
+		
+		audio_trige_flag = false;
+	}
+
 	if(audio_play_flag)
 	{
 		Voice_Start(g_audio_song);
@@ -313,11 +373,5 @@ void AudioMsgProcess(void)
 			Volume_Control(g_audio_vol);
 		}
 		audio_vol_dec_flag = false;
-	}
-
-	if(audio_trige_flag)
-	{
-		MapcsSendData(UART_DATA_AUIOD, COM_AUDIO_COMPLETED, strlen(COM_AUDIO_COMPLETED));
-		audio_trige_flag = false;
 	}
 }
