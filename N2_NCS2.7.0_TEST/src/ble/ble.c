@@ -1843,6 +1843,7 @@ void UartBleEventHandle(uint8_t *data, uint32_t data_len)
 	}
 }
 
+#ifdef CONFIG_BT
 void bt_init(void)
 {
 	int err = 0;
@@ -1882,10 +1883,14 @@ void bt_init(void)
 		return 0;
 	}
 }
+#endif
 
 void BLE_init(void)
 {
-	//bt_init();
+#ifdef CONFIG_BT
+	bt_init();
+#endif
+
 	k_timer_start(&get_ble_info_timer, K_MSEC(100), K_NO_WAIT);
 }
 

@@ -8,7 +8,7 @@
 
 #define ALARM_MAX	8
 
-#define VERSION_STR	"3.4.6_51028"
+#define VERSION_STR	"V1.0.0_20260310"
 
 typedef enum
 {
