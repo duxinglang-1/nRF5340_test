@@ -39,7 +39,7 @@ void system_init(void)
 	PPG_init();
 #endif
 #ifdef CONFIG_ECG_SUPPORT
-	//ECG_init();
+	ECG_init();
 #endif
 #ifdef CONFIG_TEMP_SUPPORT
 	temp_init();

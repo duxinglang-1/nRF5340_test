@@ -15,7 +15,7 @@
 #ifdef ECG_ADS1292
 #include "ads1292.h"
 #endif
-#ifdef ECG_MAX86176
+#elif defined(ECG_MAX86176)
 #include "max86176.h"
 #endif
 
@@ -57,9 +57,11 @@ void UartECGEventHandle(uint8_t *data, uint32_t data_len)
 		ptr += strlen(ECG_DATA_HEAD);
 		if((ptr1 = strstr(ptr, COM_ECG_SET_OPEN)) != NULL)
 		{
+      		ECG_Start();
 		}
 		else if((ptr1 = strstr(ptr, COM_ECG_SET_CLOSE)) != NULL)
 		{
+			ECG_Stop();
 		}
 	}
 }

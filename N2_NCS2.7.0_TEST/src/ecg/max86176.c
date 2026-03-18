@@ -12,69 +12,28 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/ring_buffer.h>
+#include <stdint.h>
 #include "ecg.h"
 #include "max86176.h"
+#include "uart.h"
 #include "logger.h"
 
-#ifdef ECG_MAX86176
-
+//#ifdef ECG_MAX86176
 
 #define MAX86176_DEBUG
 
 short CoeffBuf_40Hz_LowPass[FILTERORDER] = {
-	1, -6, 5, 2, -12, 11, 8, -26, 18, 20,
-	-49, 25, 43, -82, 28, 83, -126, 22, 146, -182,
-	-2, 240, -247, -56, 377, -317, -159, 573, -387, -343,
-	862, -450, -679, 1341, -501, -1407, 2406, -535, -4188, 9276,
-	21299, 9276, -4188, -535, 2406, -1407, -501, 1341, -679, -450,
-	862, -343, -387, 573, -159, -317, 377, -56, -247, 240,
-	-2, -182, 146, 22, -126, 83, 28, -82, 43, 25,
-	-49, 20, 18, -26, 8, 11, -12, 2, 5, -6,
-	1};
+    1,    -6,   5,     2,    -12,   11,   8,     -26,  18,   20,    -49,  25,
+    43,   -82,  28,    83,   -126,  22,   146,   -182, -2,   240,   -247, -56,
+    377,  -317, -159,  573,  -387,  -343, 862,   -450, -679, 1341,  -501, -1407,
+    2406, -535, -4188, 9276, 21299, 9276, -4188, -535, 2406, -1407, -501, 1341,
+    -679, -450, 862,   -343, -387,  573,  -159,  -317, 377,  -56,   -247, 240,
+    -2,   -182, 146,   22,   -126,  83,   28,    -82,  43,   25,    -49,  20,
+    18,   -26,  8,     11,   -12,   2,    5,     -6,   1};
 
-// short CoeffBuf_40Hz_LowPass[FILTERORDER] = {
-// 	0, 0, 0, 0, 0, 0, 1, -1, 0, 2,
-// 	-4, 2, 4 - 9, 7, 4, -17, 19, 0, -28,
-// 	40, -15, -37, 73, -48, -37, 116, -108, -12, 162,
-// 	-204, 57, 194, -336, 195, 181, -499, 431, 79, -677,
-// 	810, -192, -845, 1446, -832, -977, 2858 - 2932, -1050, 18562,
-// 	18562, -1050, -2932, 2858, -977, -832, 1446, -845, -192, 810,
-// 	-677, 79, 431, -499, 181, 195, -336, 194, 57, -204,
-// 	162, -12, -108, 116, -37, -48, 73, -37, -15, 40,
-// 	-28, 0, 19, -17, 4, 7, -9, 4, 2, -4,
-// 	2, 0, -1, 1, 0, 0, 0, 0, 0, 0};
-
-// short CoeffBuf_40Hz_LowPass[FILTERORDER] = {
-
-// 	-33, 19, 48, 44, 9, -49, -118, -179, -217,
-// 	-222, -191, -131, -57, 13, 61, 74, 48, -12,
-// 	-92, -173, -233, -257, -237, -178, -92, -1, 73,
-// 	110, 99, 40, -52, -156, -246, -299, -299, -244,
-// 	-145, -26, 83, 155, 170, 119, 14, -123, -257,
-// 	-355, -389, -347, -234, -75, 91, 224, 286, 256,
-// 	135, -53, -266, -449, -555, -547, -417, -186, 97,
-// 	365, 547, 584, 447, 145, -271, -711, -1067, -1230,
-// 	-1111, -664, 100, 1114, 2259, 3386, 4334, 4967, 5189,
-// 	4967, 4334, 3386, 2259, 1114, 100, -664, -1111, -1230,
-// 	-1067, -711, -271, 145, 447, 584, 547, 365, 97,
-// 	-186, -417, -547, -555, -449, -266, -53, 135, 256,
-// 	286, 224, 91, -75, -234, -347, -389, -355, -257,
-// 	-123, 14, 119, 170, 155, 83, -26, -145, -244,
-// 	-299, -299, -246, -156, -52, 40, 99, 110, 73,
-// 	-1, -92, -178, -237, -257, -233, -173, -92, -12,
-// 	48, 74, 61, 13, -57, -131, -191, -222, -217,
-// 	-179, -118, -49, 9, 44, 48, 19, -33};
 short ECG_WorkingBuff[2 * FILTERORDER];
 
-#define ecgsize 30 * 128 // 根据需要调整大小
 int EcgSampleCount = 0;
-long ecgdatas[ecgsize];
-
-// 定义日志队列大小：每条日志最大64字节，缓存1024条（可根据需求调整）
-#define LOG_QUEUE_ITEM_SIZE 16
-#define LOG_QUEUE_ITEM_COUNT 128 * 30 // 30秒ECG数据量缓存
-static uint8_t log_queue_buf[LOG_QUEUE_ITEM_SIZE * LOG_QUEUE_ITEM_COUNT];
-static struct ring_buf log_ring_buf;
 
 // 定义日志模块
 LOG_MODULE_REGISTER(MAX86176, CONFIG_LOG_DEFAULT_LEVEL);
@@ -91,21 +50,20 @@ static struct spi_cs_control spi_cs_ctr;
 bool ecg_int_flag = false;
 
 bool gUseSpi = true;
-uint8_t gReadBuf[NUM_SAMPLES_PER_INT * NUM_BYTES_PER_SAMPLE * EXTRABUFFER] = {0}; // array to store register reads
-bool gUseEcg = true, gUseEcgPpgTime = true;									// modify these as desired
+uint8_t gReadBuf[NUM_SAMPLES_PER_INT * NUM_BYTES_PER_SAMPLE * EXTRABUFFER] = {
+    0};                                     // array to store register reads
+bool gUseEcg = true;
 
-int QRS_Second_Prev_Sample = 0;
-int QRS_Prev_Sample = 0;
-int QRS_Current_Sample = 0;
-int QRS_Next_Sample = 0;
-int QRS_Second_Next_Sample = 0;
-
-static unsigned short QRS_B4_Buffer_ptr = 0;
-
-short QRS_Threshold_Old = 0;
-short QRS_Threshold_New = 0;
-unsigned char first_peak_detect = false;
-unsigned short Respiration_Rate = 0;
+// ============ 自适应增益控制变量 ============
+static ecg_adaptive_gain_t adaptive_gain = {
+    .enabled = true,                    // 默认启用自适应增益
+    .current_gain = ECG_GAIN_LOW,       // 初始增益级别
+    .signal_threshold_low = 5000,       // 信号幅度低于此值时增加增益
+    .signal_threshold_high = 100000,    // 信号幅度高于此值时降低增益
+    .adjust_interval = 256,             // 每256个采样点(约2秒@128sps)评估一次
+    .sample_count = 0,
+    .peak_value = 0
+};
 
 // Savitzky-Golay滤波器结构体和系数
 typedef struct {
@@ -114,9 +72,8 @@ typedef struct {
     int is_buffer_full;     // 缓冲区是否已填满
 } sg_filter_t;
 
-static const double sg_coeffs[9] = {
-    -0.0202, 0.2828, 0.3716, 0.3117, 0.1688, 0.0087, -0.1032, -0.1010, 0.0808
-};
+static const double sg_coeffs[9] = {-0.0909, 0.0606, 0.1688, 0.2338, 0.2554,
+                                    0.2338,  0.1688, 0.0606, -0.0909};
 
 static sg_filter_t sg_filter = {0};
 
@@ -242,19 +199,36 @@ void Max86176_ReadReg(uint8_t regAddr, uint8_t numBytes, uint8_t *readbuf)
 	memcpy(readbuf, rx_buf + 2, numBytes);
 }
 
+void Max86176_StartEcg(void) {
+  gUseEcg = true;
+  Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 4); // 修改采样率为128sps
+}
+
+void Max86176_StopEcg(void) {
+  gUseEcg = false;
+  Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 4); // 修改采样率为128sps
+}
+
 static void Sensor_Init(void) // call this on power up
 {
 	uint8_t part_id;
+	uint8_t buffer[128] = {0};
+	uint32_t len;
 
 	Max86176_ReadReg(0xff, 1, &part_id);
 #ifdef MAX86176_DEBUG
 	LOGD("ID:%d", part_id);
 #endif
-	if (part_id != MAX86176_PART_ID)
+	if(part_id != MAX86176_PART_ID)
 		return;
 
+	strcpy(buffer, COM_ECG_GET_INFOR);
+	len = strlen(COM_ECG_GET_INFOR);
+	sprintf(&buffer[len], "Sensor ID:%02X", part_id);
+	MapcsSendData(UART_DATA_ECG, buffer, strlen(buffer));
+
 	Max86176_WriteReg(0x10, 1); // RESET  ,并且使用过了内部时钟
-	while (1)
+	while(1)
 	{
 		Max86176_ReadReg(0x10, 1, &gReadBuf[0]);
 	#ifdef MAX86176_DEBUG
@@ -264,9 +238,8 @@ static void Sensor_Init(void) // call this on power up
 			break;
 	}
 
-	uint8_t readbuf[6];					// 存储6个寄存器的数据
+	uint8_t readbuf[6];
 	Max86176_ReadReg(0x00, 6, readbuf); // 从0x00开始读6字节
-
 #ifdef MAX86176_DEBUG
 	LOGD("Reg0 0x%02X, 0x%02X,0x%02X, 0x%02X,0x%02X, 0x%02X\n", readbuf[0], readbuf[1], readbuf[2], readbuf[3], readbuf[4], readbuf[5]);
 #endif
@@ -275,10 +248,12 @@ static void Sensor_Init(void) // call this on power up
 #ifdef MAX86176_DEBUG
 	LOGD("Max86176_Init");
 #endif
-	// Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf);			  // 连续读6个状态寄存器的值， read and clear all status registers
-	Max86176_WriteReg(0x0d, AFE_FIFO_SIZE - NUM_SAMPLES_PER_INT); // 设置FIFO数量，FIFO_A_FULL; assert A_FULL on NUM_SAMPLES_PER_INT samples
-	Max86176_WriteReg(0x12, ((gUseEcgPpgTime ? 1 : 0) << 2));	  // 配置PPG的时序数据到FIFO中，PPG_TIMING_DATA; note that the initial PPG frames may not have an associated ECG sample if they come before the ECG samples have started
-	Max86176_WriteReg(0x80, 0x80);								  // 中断使能 A_FULL_EN; enable interrupt pin on A_FULL assertion; ensure to enable the MCU's interrupt pin
+	// Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf);			  //
+	// 连续读6个状态寄存器的值， read and clear all status registers
+	Max86176_WriteReg(0x0d, AFE_FIFO_SIZE -	NUM_SAMPLES_PER_INT); // 设置FIFO数量，FIFO_A_FULL; assert
+	// A_FULL on NUM_SAMPLES_PER_INT samples
+	Max86176_WriteReg(0x80, 0x80); // 中断使能 A_FULL_EN; enable interrupt pin on A_FULL
+	// assertion; ensure to enable the MCU's interrupt pin
 	// Max86176_WriteReg(0x80, 0xE0);
 	Max86176_WriteReg(0x1C, 0X20); // CLK_SEL; use internal 32.768kHz clock
 
@@ -303,10 +278,10 @@ static void Sensor_Init(void) // call this on power up
 #ifdef MAX86176_DEBUG
 	LOGD("read pll begin");
 #endif
-	while (!(pll_status & 0x02))
+	while(!(pll_status & 0x02))
 	{
 	#ifdef MAX86176_DEBUG
-		LOG_INF("pll_status : 0x%02X", pll_status);
+		LOGD("pll_status : 0x%02X", pll_status);
 	#endif
 		ECG_Sleep_ms(100);
 		Max86176_ReadReg(0x04, 1, &pll_status); // 读取Status 5寄存器(0x04)
@@ -316,34 +291,30 @@ static void Sensor_Init(void) // call this on power up
 	LOGD("read pll end");
 #endif
 	// ECG (32.768kHz*(0x1f+289)/(0x13f+1)/64=512Sps)
-	// Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 2); // 打开ECG，并且设置ECG的采样率 ECG_EN | ECG_DEC_RATE 采样频率为512sps
-	Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 4); // 修改采样率为128sps
+	// Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 2); //
+	// 打开ECG，并且设置ECG的采样率 ECG_EN | ECG_DEC_RATE 采样频率为512sps
+	// Max86176_WriteReg(0x90, ((gUseEcg ? 1 : 0) << 7) | 4); //
+	// 修改采样率为128sps
 
-	uint8_t ecg_config2 = (3 << 4) | (0); // PGA=8x (011b), INA=20x (00b)
+	uint8_t ecg_config2 = (1 << 7) | (3 << 4) | (1);        // PGA=8x (011b), INA=20x (00b)
 	Max86176_WriteReg(0x91, ecg_config2); // 设置ECG增益
-
-	Max86176_WriteReg(0xa2, (0 << 7) | (0 << 6)); // ECG_P正极输入端和ECG_N负极输入端连接到ECG通道 OPEN_P | OPEN_N
-
-	// Max86176_WriteReg(0x85, 0x08);// 使能导联脱落中断，设置中断正极还是负极触发
-	//  PPG (32.768kHz/256=128Fps)
-	uint32_t FrClkDiv = 0x100;
-	Max86176_WriteReg(0x11, 0x07);					 // PPG测试通道配置槽 MEAS1-3_EN; enable first NUM_MEAS_PER_FRAME measurements
-	Max86176_WriteReg(0x1d, (FrClkDiv >> 8) & 0xff); // PPG时钟分频器FR_CLK_DIV
-	Max86176_WriteReg(0x1e, (FrClkDiv >> 0) & 0xff); // FR_CLK_DIV
-	Max86176_WriteReg(0x25, 0x10);					 // 设置LED驱动脉冲电流幅度 MEAS1_DRVA_PA; set current to non-0
-	Max86176_WriteReg(0x2d, 0x10);					 // MEAS2_DRVA_PA; set current to non-0
-	Max86176_WriteReg(0x35, 0x10);					 // MEAS3_DRVA_PA; set current to non-0
+	Max86176_WriteReg(0xa2,	(0 << 7) | (0 << 6)); // ECG_P正极输入端和ECG_N负极输入端连接到ECG通道
+	// OPEN_P | OPEN_N
 
 	// ACLOFF (ADC: ~10Sps, DAC: 32.768kHz*(0x1f+289)/(10*64*(2+1))=5461.3Hz)
-	Max86176_WriteReg(0x93, (2 << 5));				  // AC交流导联脱落使能 EN_LOFF_DET
-	Max86176_WriteReg(0x94, (1 << 6) | (2 << 4) | 5); // 使用 ECG 共模输入电阻，提高 AC-LOFF 精度 HI_CM_RES_EN (1 to use ECG common-mode input impedance) | LOFF_CG_MODE (2 when using RLD or lead bias) | LOFF_IMAG (200nA)
-	Max86176_WriteReg(0x95, (1 << 7) | 2);			  // AC_LOFF_IWAVE (1=sine) | AC_LOFF_FREQ_DIV
-	Max86176_WriteReg(0x99, 0x10);					  // AC 导联脱落比较器阈值 AC_LOFF_THRESH
-	Max86176_WriteReg(0x9a, (0 << 6) | 5);			  // 用来滤除直流和低频干扰 AC_LOFF_UTIL_PGA_GAIN | AC_LOFF_HPF
-	// other relevant ACLOFF registers are at defaults: AC_LOFF_CONV=0 (~10Sps), AC_LOFF_CMP=2
-	// RLD
-	Max86176_WriteReg(0xa8, (1 << 7) | (1 << 6) | (1 << 4) | (1 << 3) | (1 << 2) | 3); // RLD_EN | RLD_MODE | EN_RLD_OOR | ACTV_CM_P | ACTV_CM_N | RLD_GAIN
-	Max86176_WriteReg(0xa9, (0 << 7) | (1 << 6) | (0 << 4) | 0);					   // RLD_EXT_RES | SEL_VCM_IN | RLD_BW | BODY_BIAS_DAC
+	// 0x93: bit7=EN_LON_DET, bit6-5=EN_LOFF_DET, bit4=DAC_STIM_MODE,
+	// bit3-0=LOFF_SETTLE
+	Max86176_WriteReg(0x93,	(1 << 7) | (2 << 5)); // 启用 Lead On 检测 + AC导联脱落检测
+	Max86176_WriteReg(0x94, (1 << 6) | (2 << 4) | 5); // 使用 ECG 共模输入电阻，提高 AC-LOFF 精度 HI_CM_RES_EN (1
+	// to use ECG common-mode input impedance) | LOFF_CG_MODE (2
+	// when using RLD or lead bias) | LOFF_IMAG (200nA)
+	Max86176_WriteReg(0x95,	(1 << 7) | 2); // AC_LOFF_IWAVE (1=sine) | AC_LOFF_FREQ_DIV
+	Max86176_WriteReg(0x99, 0x10);   // AC 导联脱落比较器阈值 AC_LOFF_THRESH
+	Max86176_WriteReg(0x9a,	(0 << 6) | 5); // 用来滤除直流和低频干扰 AC_LOFF_UTIL_PGA_GAIN | AC_LOFF_HPF
+	// other relevant ACLOFF registers are at defaults: AC_LOFF_CONV=0 (~10Sps),
+	// AC_LOFF_CMP=2 RLD
+	Max86176_WriteReg(0xa8, (1 << 7) | (1 << 6) | (1 << 4) | (1 << 3) | (1 << 2) |	3); // RLD_EN | RLD_MODE | EN_RLD_OOR | ACTV_CM_P	// | ACTV_CM_N | RLD_GAIN
+	Max86176_WriteReg(0xa9,	(0 << 7) | (1 << 6) | (0 << 4) | 0); // RLD_EXT_RES | SEL_VCM_IN | RLD_BW | BODY_BIAS_DAC
 }
 
 #define NOTCH_B0 0.9910186348f
@@ -392,10 +363,11 @@ void ECG_IIR_FIR_Filter(short CurrAqsSample, short *FilteredOut)
 	short temp1, temp2, ECGData;
 	unsigned short Cur_Chan;
 	short FiltOut;
+
 	CoeffBuf = CoeffBuf_40Hz_LowPass;
-	if (ECGFirstFlag)
+	if(ECGFirstFlag)
 	{
-		for (Cur_Chan = 0; Cur_Chan < FILTERORDER; Cur_Chan++)
+		for(Cur_Chan = 0; Cur_Chan < FILTERORDER; Cur_Chan++)
 		{
 			ECG_WorkingBuff[Cur_Chan] = 0;
 		}
@@ -403,19 +375,19 @@ void ECG_IIR_FIR_Filter(short CurrAqsSample, short *FilteredOut)
 		ECG_Pvev_Sample = 0;
 		ECGFirstFlag = 0;
 	}
+	
 	temp1 = NRCOEFF * ECG_Pvev_DC_Sample; // First order IIR
 	ECG_Pvev_DC_Sample = (CurrAqsSample - ECG_Pvev_Sample) + temp1;
 	ECG_Pvev_Sample = CurrAqsSample;
 	temp2 = ECG_Pvev_DC_Sample >> 2;
 	ECGData = (long)temp2;
-	// LOGD(" IIR_ECGDATA: %ld", ECGData);
 	ECG_WorkingBuff[ECG_bufCur] = ECGData;
 	ECG_FilterProcess(&ECG_WorkingBuff[ECG_bufCur], CoeffBuf, (short *)&FiltOut);
 	ECG_WorkingBuff[ECG_bufStart] = ECGData;
 	FilteredOut[0] = FiltOut;
 	ECG_bufCur++;
 	ECG_bufStart++;
-	if (ECG_bufStart == (FILTERORDER - 1))
+	if(ECG_bufStart == (FILTERORDER - 1))
 	{
 		ECG_bufStart = 0;
 		ECG_bufCur = FILTERORDER - 1;
@@ -423,274 +395,6 @@ void ECG_IIR_FIR_Filter(short CurrAqsSample, short *FilteredOut)
 
 	return;
 }
-
-#define SAMPLING_RATE 128
-
-#define TWO_SEC_SAMPLES 2 * SAMPLING_RATE
-#define MAXIMA_SEARCH_WINDOW 40
-#define MINIMUM_SKIP_WINDOW 50
-
-// #define MAXIMA_SEARCH_MS 80
-// #define MINIMUM_SKIP_MS 100
-
-// #define MAXIMA_SEARCH_WINDOW ((MAXIMA_SEARCH_MS * SAMPLING_RATE) / 1000)
-// #define MINIMUM_SKIP_WINDOW   ((MINIMUM_SKIP_MS * SAMPLING_RATE) / 1000)
-
-#define MAX_PEAK_TO_SEARCH 5
-unsigned int sample_count = 0;
-unsigned short QRS_Heart_Rate = 0;
-unsigned char HR_flag;
-unsigned char Start_Sample_Count_Flag = 0;
-unsigned int sample_index[MAX_PEAK_TO_SEARCH + 2];
-static void QRS_check_sample_crossing_threshold(unsigned short scaled_result)
-{
-	/* array to hold the sample indexes S1,S2,S3 etc */
-
-	static unsigned short s_array_index = 0;
-	static unsigned short m_array_index = 0;
-
-	static unsigned char threshold_crossed = false;
-	static unsigned short maxima_search = 0;
-	static unsigned char peak_detected = false;
-	static unsigned short skip_window = 0;
-	static long maxima_sum = 0;
-	static unsigned int peak = 0;
-	static unsigned int sample_sum = 0;
-	static unsigned int nopeak = 0;
-	unsigned short max = 0;
-	unsigned short HRAvg;
-
-	if (true == threshold_crossed)
-	{
-		/*
-		Once the sample value crosses the threshold check for the
-		maxima value till MAXIMA_SEARCH_WINDOW samples are received
-		*/
-		sample_count++;
-		maxima_search++;
-
-		if (scaled_result > peak)
-		{
-			peak = scaled_result;
-		}
-
-		if (maxima_search >= MAXIMA_SEARCH_WINDOW)
-		{
-			// Store the maxima values for each peak
-			maxima_sum += peak;
-			maxima_search = 0;
-
-			threshold_crossed = false;
-			peak_detected = true;
-		}
-	}
-	else if (true == peak_detected)
-	{
-		/*
-		Once the sample value goes below the threshold
-		skip the samples untill the SKIP WINDOW criteria is meet
-		*/
-		sample_count++;
-		skip_window++;
-
-		if (skip_window >= MINIMUM_SKIP_WINDOW)
-		{
-			skip_window = 0;
-			peak_detected = false;
-		}
-
-		if (m_array_index == MAX_PEAK_TO_SEARCH)
-		{
-			sample_sum = sample_sum / (MAX_PEAK_TO_SEARCH - 1);
-			HRAvg = (unsigned short)sample_sum;
-#if 0
-			if((LeadStatus & 0x0005)== 0x0000)
-			{
-				
-			QRS_Heart_Rate = (unsigned short) 60 *  SAMPLING_RATE;
-			QRS_Heart_Rate =  QRS_Heart_Rate/ HRAvg ;
-				if(QRS_Heart_Rate > 250)
-					QRS_Heart_Rate = 250 ;
-			}
-			else
-			{
-				QRS_Heart_Rate = 0;
-			}
-#else
-			// Compute HR without checking LeadOffStatus
-			QRS_Heart_Rate = (unsigned short)60 * SAMPLING_RATE;
-			QRS_Heart_Rate = QRS_Heart_Rate / HRAvg;
-			if (QRS_Heart_Rate > 250)
-				QRS_Heart_Rate = 250;
-#endif
-
-			/* Setting the Current HR value in the ECG_Info structure*/
-
-			HR_flag = 1;
-
-			maxima_sum = maxima_sum / MAX_PEAK_TO_SEARCH;
-			max = (short)maxima_sum;
-			/*  calculating the new QRS_Threshold based on the maxima obtained in 4 peaks */
-			maxima_sum = max * 7;
-			maxima_sum = maxima_sum / 10;
-			QRS_Threshold_New = (short)maxima_sum;
-
-			/* Limiting the QRS Threshold to be in the permissible range*/
-			if (QRS_Threshold_New > (4 * QRS_Threshold_Old))
-			{
-				QRS_Threshold_New = QRS_Threshold_Old;
-			}
-
-			sample_count = 0;
-			s_array_index = 0;
-			m_array_index = 0;
-			maxima_sum = 0;
-			sample_index[0] = 0;
-			sample_index[1] = 0;
-			sample_index[2] = 0;
-			sample_index[3] = 0;
-			Start_Sample_Count_Flag = 0;
-
-			sample_sum = 0;
-		}
-	}
-	else if (scaled_result > QRS_Threshold_New)
-	{
-		/*
-			If the sample value crosses the threshold then store the sample index
-		*/
-		Start_Sample_Count_Flag = 1;
-		sample_count++;
-		m_array_index++;
-		threshold_crossed = true;
-		peak = scaled_result;
-		nopeak = 0;
-
-		/*	storing sample index*/
-		sample_index[s_array_index] = sample_count;
-		if (s_array_index >= 1)
-		{
-			sample_sum += sample_index[s_array_index] - sample_index[s_array_index - 1];
-		}
-		s_array_index++;
-	}
-
-	else if ((scaled_result < QRS_Threshold_New) && (Start_Sample_Count_Flag == 1))
-	{
-		sample_count++;
-		nopeak++;
-		if (nopeak > (3 * SAMPLING_RATE))
-		{
-			sample_count = 0;
-			s_array_index = 0;
-			m_array_index = 0;
-			maxima_sum = 0;
-			sample_index[0] = 0;
-			sample_index[1] = 0;
-			sample_index[2] = 0;
-			sample_index[3] = 0;
-			Start_Sample_Count_Flag = 0;
-			peak_detected = false;
-			sample_sum = 0;
-
-			first_peak_detect = false;
-			nopeak = 0;
-
-			QRS_Heart_Rate = 0;
-			HR_flag = 1;
-		}
-	}
-	else
-	{
-		nopeak++;
-		if (nopeak > (3 * SAMPLING_RATE))
-		{
-			/* Reset heart rate computation sate variable in case of no peak found in 3 seconds */
-			sample_count = 0;
-			s_array_index = 0;
-			m_array_index = 0;
-			maxima_sum = 0;
-			sample_index[0] = 0;
-			sample_index[1] = 0;
-			sample_index[2] = 0;
-			sample_index[3] = 0;
-			Start_Sample_Count_Flag = 0;
-			peak_detected = false;
-			sample_sum = 0;
-			first_peak_detect = false;
-			nopeak = 0;
-			QRS_Heart_Rate = 0;
-			HR_flag = 1;
-		}
-	}
-}
-
-static void QRS_process_buffer(void)
-{
-
-	short first_derivative = 0; // 一阶导数的值
-	short scaled_result = 0;	// 缩放后的结果
-
-	static short max = 0;
-
-	/* calculating first derivative*/
-	first_derivative = QRS_Next_Sample - QRS_Prev_Sample;
-
-	// 获取一阶导数的绝对值
-	if (first_derivative < 0)
-	{
-		first_derivative = -(first_derivative);
-	}
-
-	scaled_result = first_derivative;
-
-	if (scaled_result > max)
-	{
-		max = scaled_result;
-	}
-
-	QRS_B4_Buffer_ptr++;
-	if (QRS_B4_Buffer_ptr == TWO_SEC_SAMPLES)
-	{
-		QRS_Threshold_Old = ((max * 7) / 10);
-		QRS_Threshold_New = QRS_Threshold_Old;
-		if (QRS_Threshold_New < 10)
-    QRS_Threshold_New = 10;
-	
-		// 如果max大于70，则设置first_peak_detect为true,表示检测到第一个峰值
-		if (max > 20)
-			first_peak_detect = true;
-		max = 0;
-		QRS_B4_Buffer_ptr = 0;
-	}
-
-	if (true == first_peak_detect)
-	{
-		QRS_check_sample_crossing_threshold(scaled_result);
-	}
-}
-
-void QRS_Algorithm_Interface(short CurrSample)
-{
-	static short prev_data[32] = {0};
-	long Mac = 0; // 累加值
-	prev_data[0] = CurrSample;
-	for (int i = 31; i > 0; i--)
-	{
-		Mac += prev_data[i];
-		prev_data[i] = prev_data[i - 1];
-	}
-	Mac += CurrSample;
-	Mac = Mac >> 2;
-	CurrSample = (short)Mac; // 将累加的值右移2位然后转化为短整形
-	QRS_Second_Prev_Sample = QRS_Prev_Sample;
-	QRS_Prev_Sample = QRS_Current_Sample;
-	QRS_Current_Sample = QRS_Next_Sample;
-	QRS_Next_Sample = QRS_Second_Next_Sample;
-	QRS_Second_Next_Sample = CurrSample;
-	QRS_process_buffer();
-}
-
 
 short ECG_SavitzkyGolay_Filter(short new_sample) {
     // 将新样本存入缓冲区
@@ -723,184 +427,177 @@ short ECG_SavitzkyGolay_Filter(short new_sample) {
     }
     
     // 将结果转换回short类型，注意数据范围
-    int16_t result = (int16_t)(sum + 0.5); // 四舍五入
+  // int16_t result = (int16_t)(sum + 0.5); // 四舍五入
+	int16_t result = (int16_t)(sum + (sum >= 0 ? 0.5f : -0.5f));
     
     return result;
 }
 
 
-// 日志线程入口函数（优先级设为最低，避免抢占主线程）
-#define LOG_THREAD_STACK_SIZE 1024
-#define LOG_THREAD_PRIORITY 5
 short ECGFilteredData[4];
-static void log_consumer_thread(void *p1, void *p2, void *p3)
+
+
+// ECG 数据批量发送缓冲区 (每 1 秒 128 个数据)
+#define ECG_BATCH_SIZE 128
+// 启动预热期：跳过前N个不稳定采样点
+#define ECG_WARMUP_SAMPLES ECG_BATCH_SIZE*4  // 约4秒@128sps
+static bool ecg_warmup_done = false;
+
+static short ecg_batch_buffer[ECG_BATCH_SIZE];
+static uint32_t ecg_batch_count = 0;
+
+// 调试计数器
+static uint32_t dbg_int_count = 0;        // 中断触发次数
+static uint32_t dbg_work_count = 0;       // 工作队列执行次数
+static uint32_t dbg_fifo_ready_count = 0; // FIFO准备好次数
+static uint32_t dbg_consumer_count = 0;   // 消费者读取次数
+
+// 使用k_work工作队列替代信号量+线程方案
+static struct k_work afe_work;
+static void afe_work_handler(struct k_work *work);
+
+// 初始化工作队列
+static void afe_work_init(void) { k_work_init(&afe_work, afe_work_handler); }
+
+// array to store ECG/ACLOFF/PPG ADC counts, time data
+int32_t adcCountArr[NUM_ADC][NUM_SAMPLES_PER_INT *
+                             EXTRABUFFER]; // array to store ECG/ACLOFF/PPG ADC
+                                           // counts, time data
+
+// 静态变量用于AFE处理
+static int32_t gEcgSampleCount = -1;
+
+// AFE工作处理函数 - 由系统工作队列调度执行
+// 采用循环处理方式，确保FIFO中所有数据都被处理，避免高频中断时数据丢失
+static void afe_work_handler(struct k_work *work)
 {
-	uint8_t log_str[4];
-	size_t read_len;
 	int32_t ecg_value;
-	double dc3, ecg_bp, y, hrBeforeKalman, hrFiltered;
-	double ecgInputValue;
-	short curr_sample;
-	float notch_out;
-	while (1)
+	uint8_t data0, data1, data2, sampleIx[NUM_ADC] = {0}, tag;
+	uint16_t readBufIx = 0;
+	uint32_t ecg_in_this_batch = 0;
+	int loop_count = 0;
+	const int max_loops = 10; // 防止无限循环，最多处理10批次
+
+	dbg_work_count++;
+
+	// 循环处理直到FIFO为空或达到最大循环次数
+	while(loop_count < max_loops)
 	{
-		// 从队列读取日志（队列为空时阻塞，不占用CPU）
-		read_len = ring_buf_get(&log_ring_buf, log_str, sizeof(log_str));
-		if (read_len == 0)
+		// 重置每批次的sample索引
+		memset(sampleIx, 0, sizeof(sampleIx));
+		ecg_in_this_batch = 0;
+
+		Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf); // read and clear all status registers
+		if(!(gReadBuf[0] & 0x80)) // FIFO满的标志位  check A_FULL bit
+			break;                     // FIFO为空，退出循环
+
+		loop_count++;
+		dbg_fifo_ready_count++;
+
+		Max86176_ReadReg(0x0a, 2, gReadBuf);						// read FIFO_DATA_COUNT
+		uint32_t count = ((gReadBuf[0] & 0x80) << 1) | gReadBuf[1]; // FIFO_DATA_COUNT will be >= NUM_SAMPLES_PER_INT
+		Max86176_ReadReg(0x0c, count * NUM_BYTES_PER_SAMPLE, gReadBuf); // read FIFO_DATA
+		for(readBufIx = 0;readBufIx < (count*NUM_BYTES_PER_SAMPLE);readBufIx += NUM_BYTES_PER_SAMPLE) // parse the FIFO data
 		{
-			k_sleep(K_MSEC(20)); // 防止空转占CPU
-			continue;
-		}
-		if (read_len == 4)
-		{
-			ecg_value = *(int32_t *)log_str; // 还原32位整数
-			ecgInputValue = (double)ecg_value;
-			// 如果最高位是 1，则负数补码
-			if (ecg_value & 0x20000)
+			tag = (gReadBuf[readBufIx] >> 4) & 0xf;
+			if(tag == TAG_ECG)
 			{
-				ecg_value -= (1 << 18);
+				data0 = gReadBuf[readBufIx];
+				data1 = gReadBuf[readBufIx + 1];
+				data2 = gReadBuf[readBufIx + 2];
+				// ECG 数据是 18-bit 二补码
+				ecg_value = ((data0 & 0x03) << 16) | (data1 << 8) | data2;
+
+				// 直接在工作队列中处理ECG数据，不使用消费者线程
+				// 18位二补码转换：如果bit17是1，则为负数
+				int32_t ecg_signed = ecg_value;
+				if(ecg_signed & 0x20000)
+				{
+					ecg_signed -= (1 << 18);
+				}
+
+				// 使用int32_t进行滤波，避免short溢出
+				short curr_sample = (short)(ecg_signed);
+				ECG_IIR_FIR_Filter(curr_sample, &ECGFilteredData[1]);
+				ECGFilteredData[1] = ECG_SavitzkyGolay_Filter(ECGFilteredData[1]);
+
+				//自适应增益处理 - 根据信号幅度动态调整增益
+				Max86176_AdaptiveGainProcess(ecg_signed);
+
+				//启动预热期：跳过前N个不稳定采样点
+				if(!ecg_warmup_done)
+				{
+					gEcgSampleCount++;
+					if(gEcgSampleCount >= ECG_WARMUP_SAMPLES)
+					{
+						ecg_warmup_done = true;
+					#ifdef MAX86176_DEBUG	
+						LOGD("ECG warmup complete, starting data output");
+					#endif
+					}
+
+					//预热期间继续处理数据但不发送
+					continue;
+				}
+
+				//将滤波后的数据存入批量缓冲区
+				ecg_batch_buffer[ecg_batch_count] = ECGFilteredData[1];
+				ecg_batch_count++;
+
+				// 每收集 128 个数据 (1 秒) 后批量发送
+				if(ecg_batch_count >= ECG_BATCH_SIZE)
+				{
+					uint32_t len;
+					uint8_t buffer[ECG_BATCH_SIZE*2+10] = {0};
+					
+				#ifdef MAX86176_DEBUG
+					LOGD("Sending ECG data");
+				#endif
+					strcpy(buffer, COM_ECG_GET_DATA);
+					len = strlen(COM_ECG_GET_DATA);
+					memcpy(&buffer[len], (void*)&ecg_batch_buffer, ECG_BATCH_SIZE*2);
+					MapcsSendData(UART_DATA_ECG, buffer, ECG_BATCH_SIZE*2+len);
+
+					ecg_batch_count = 0;
+				}
+
+				ecg_in_this_batch++;
+
+				gEcgSampleCount++;
+				adcCountArr[IX_ECG][sampleIx[IX_ECG]++] = (gReadBuf[readBufIx + 0] >> 2) & 1;
+				adcCountArr[IX_ECG][sampleIx[IX_ECG]] =	((gReadBuf[readBufIx + 0] & 0x3) << 16) + (gReadBuf[readBufIx + 1] << 8) + gReadBuf[readBufIx + 2];
+				if(gReadBuf[readBufIx + 0] & 0x2)
+					adcCountArr[IX_ECG][sampleIx[IX_ECG]] -= (1 << 18);
+				
+				sampleIx[IX_ECG]++;
 			}
+			else if(tag == TAG_LOFFUTIL)
+			{
+				tag = (gReadBuf[readBufIx + 0] >> 2) & 1; // this can also be used for the array index in this example
+				adcCountArr[tag][sampleIx[tag]] = ((gReadBuf[readBufIx + 1] & 0xf) << 8) + gReadBuf[readBufIx + 2];
+				if(gReadBuf[readBufIx + 0] & 0x8)
+					adcCountArr[tag][sampleIx[tag]] -= (1 << 12);
 
-			// LOG_INF("ECG RAW DATA %ld", ecg_value);
-			//   转换为short类型传入滤波函数
-			curr_sample = (short)ecg_value;
-
-			ECG_IIR_FIR_Filter(curr_sample, &ECGFilteredData[1]);
-			ECGFilteredData[1] = ECG_SavitzkyGolay_Filter(ECGFilteredData[1]);
-			 QRS_Algorithm_Interface(ECGFilteredData[1]);
-		#ifdef MAX86176_DEBUG
-			LOGD(" HEART_ECGDATA: %ld", QRS_Heart_Rate);
-		#endif
-			//LOG_INF("TI_FILTER_ECGDATA: %d", ECGFilteredData[1]);
-
-			// baseline_filter((double)ecgInputValue, 50.0, 40.0, 1.0, 1.0, 128.0,
-			//  				&dc3, &ecg_bp, &y, &hrBeforeKalman, &hrFiltered);
-			//  LOG_INF("MAX_FILTER_ECGDATA: %d", y);
+				sampleIx[tag]++;
+				if(sampleIx[tag] >= NUM_SAMPLES_PER_INT * EXTRABUFFER)
+				{
+					sampleIx[tag] = 0;
+				}
+			}
 		}
-
-
-		// LOG_INF("%s", log_str);
-		k_sleep(K_MSEC(5)); // 保持打印节奏
 	}
+	
+	//如果达到最大循环次数仍有数据，重新调度自己
+	if(loop_count >= max_loops)
+		k_work_submit(&afe_work);
 }
-K_THREAD_STACK_DEFINE(log_stack_area, LOG_THREAD_STACK_SIZE);
-static struct k_thread log_thread_data;
-
-// 初始化日志线程（在 ECG_Sensor_Init 中调用）
-static void log_thread_init(void)
-{
-
-	k_thread_create(&log_thread_data, log_stack_area, K_THREAD_STACK_SIZEOF(log_stack_area),
-					log_consumer_thread, NULL, NULL, NULL,
-					LOG_THREAD_PRIORITY, 0, K_NO_WAIT);
-}
-
-// 初始化队列
-static void log_queue_init(void)
-{
-	ring_buf_init(&log_ring_buf, LOG_QUEUE_ITEM_SIZE * LOG_QUEUE_ITEM_COUNT, log_queue_buf);
-}
-
-//array to store ECG/ACLOFF/PPG ADC counts, time data
-int32_t adcCountArr[NUM_ADC][NUM_SAMPLES_PER_INT * EXTRABUFFER];								 // array to store ECG/ACLOFF/PPG ADC counts, time data
 
 void Max86176_onAfeInt(void) // call this on AFE interrupt
 {
-	static int32_t gEcgSampleCount = -1;
-	static bool gEcgPpgTimeOccurred; // static since the reference sample have come in the previous interrupt
-	static uint8_t gPpgFrameItemCount;
-	int32_t ecg_value;
-	uint8_t data0, data1, data2, sampleIx[NUM_ADC] = {0}, tag;;
-	uint16_t readBufIx = 0; 
+  dbg_int_count++;
 
-#ifdef MAX86176_DEBUG
-	LOGD("begin");
-#endif
-
-	Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf); // read and clear all status registers
-	// LOG_INF("gReadBuf[0]:%d", gReadBuf[0]);
-	if (!(gReadBuf[0] & 0x80)) // FIFO满的标志位  check A_FULL bit
-		return;
-	// LOG_INF("zhongduan22222");
-	Max86176_ReadReg(0x0a, 2, gReadBuf);						// read FIFO_DATA_COUNT
-	uint32_t count = ((gReadBuf[0] & 0x80) << 1) | gReadBuf[1]; // FIFO_DATA_COUNT will be >= NUM_SAMPLES_PER_INT
-#ifdef MAX86176_DEBUG
-	LOGD("count:%d", count);
-#endif
-	Max86176_ReadReg(0x0c, count * NUM_BYTES_PER_SAMPLE, gReadBuf); // read FIFO_DATA
-	for(readBufIx = 0;readBufIx < (count*NUM_BYTES_PER_SAMPLE);readBufIx += NUM_BYTES_PER_SAMPLE) // parse the FIFO data
-	{
-		tag = (gReadBuf[readBufIx] >> 4) & 0xf;
-	#ifdef MAX86176_DEBUG
-		LOGD("readBufIx:%d, tag:%d", readBufIx, tag);
-	#endif
-	#if 0	//xb test 2025-11-28	
-		if(0)//((tag <= TAG_PPG_MAX) && ((gUseEcg && gUseEcgPpgTime && gEcgPpgTimeOccurred) || !(gUseEcg && gUseEcgPpgTime)))
-		{
-			//If time data and the ADC for the time data are enabled, only save samples that have associated time data. 
-			//PPG samples may not have associated time data if they come before ECG samples, which may occur on start-up or PLL unlock.
-			if(++gPpgFrameItemCount == (NUM_MEAS_PER_FRAME * NUM_PPG_PER_MEAS))
-			{
-				gPpgFrameItemCount = 0;
-				gEcgPpgTimeOccurred = false;
-			}
-			adcCountArr[IX_PPG][sampleIx[IX_PPG]] = ((gReadBuf[readBufIx + 0] & 0xf) << 16) + (gReadBuf[readBufIx + 1] << 8) + gReadBuf[readBufIx + 2];
-			if (gReadBuf[readBufIx + 0] & 0x8)
-				adcCountArr[IX_PPG][sampleIx[IX_PPG]] -= (1 << 20);
-			sampleIx[IX_PPG]++;
-		}
-		else if(tag == TAG_ECG)
-		{
-			data0 = gReadBuf[readBufIx];
-			data1 = gReadBuf[readBufIx + 1];
-			data2 = gReadBuf[readBufIx + 2];
-			// ECG 数据是 18-bit 二补码
-			ecg_value = ((data0 & 0x03) << 16) | (data1 << 8) | data2;
-
-			uint8_t *data_ptr = (uint8_t *)&ecg_value;
-			uint32_t data_len = sizeof(ecg_value);
-
-			// 尝试写入队列，队列满时可选择丢弃（避免阻塞主线程）
-			ring_buf_put(&log_ring_buf, data_ptr, data_len);
-			// LOG_INF(" ECG_RAWDATA: %ld,", ecg_value);
-			//  ecgdatas[EcgSampleCount++ % ecgsize] = ecg_value;
-
-			gEcgSampleCount++;
-			adcCountArr[IX_ECG][sampleIx[IX_ECG]++] = (gReadBuf[readBufIx + 0] >> 2) & 1; // Note that every other item is ECG fast recovery. Comment this out if not needed.
-			adcCountArr[IX_ECG][sampleIx[IX_ECG]] = ((gReadBuf[readBufIx + 0] & 0x3) << 16) + (gReadBuf[readBufIx + 1] << 8) + gReadBuf[readBufIx + 2];
-			if (gReadBuf[readBufIx + 0] & 0x2)
-				adcCountArr[IX_ECG][sampleIx[IX_ECG]] -= (1 << 18);
-			sampleIx[IX_ECG]++;
-		}
-		else if(tag == TAG_LOFFUTIL)
-		{
-			// LOG_INF("LOFFUTIL RAW DATS");
-			tag = (gReadBuf[readBufIx + 0] >> 2) & 1; // this can also be used for the array index in this example
-			adcCountArr[tag][sampleIx[tag]] = ((gReadBuf[readBufIx + 1] & 0xf) << 8) + gReadBuf[readBufIx + 2];
-			if (gReadBuf[readBufIx + 0] & 0x8)
-				adcCountArr[tag][sampleIx[tag]] -= (1 << 12);
-			sampleIx[tag]++;
-			if (sampleIx[tag] >= NUM_SAMPLES_PER_INT * EXTRABUFFER)
-			{
-				sampleIx[tag] = 0;
-			}
-		}
-		else if(tag == TAG_TIME)
-		{
-			// LOG_INF("TIME RAW DATS");
-			gEcgPpgTimeOccurred = true;
-			adcCountArr[IX_TIME][sampleIx[IX_TIME]++] = gEcgSampleCount; // the ECG sample number that this PPG_TIMING_DATA is associated with
-			adcCountArr[IX_TIME][sampleIx[IX_TIME]++] = ((gReadBuf[readBufIx + 1] & 0x3) << 8) + gReadBuf[readBufIx + 2];
-		}
-	#endif	
-	}
-
-#ifdef MAX86176_DEBUG	
-	LOGD("end");
-#endif
-	// Process adcCountArr[][] here. sampleIx[] tells how many samples are in each adcCountArr[].
-	// If sampleIx[IX_PPG]!=0 && gPpgFrameItemCount!=0, the complete frame has not been read (it will be complete on the next FIFO read), so account for that in the processing.
-	// The shorter the delay between the HW interrupt and calling this function, and the more PPG measurements to be made, the higher the likelihood that the PPG frame may not be complete on this read.
+  // 提交工作到系统工作队列，异步执行耗时操作
+  k_work_submit(&afe_work);
 }
 
 void Max86176_Int_Disable(void)
@@ -908,17 +605,100 @@ void Max86176_Int_Disable(void)
 	gpio_pin_interrupt_configure(gpio_1_ecg, ECG_INT_PIN, GPIO_INT_DISABLE);
 }
 
+static bool gpio_cb_added = false;  // 标记回调是否已添加
 void Max86176_Int_Enable(void)
 {
 	gpio_pin_configure(gpio_1_ecg, ECG_INT_PIN, GPIO_INPUT);
 	gpio_pin_interrupt_configure(gpio_1_ecg, ECG_INT_PIN, GPIO_INT_DISABLE);
-	gpio_init_callback(&gpio_cb, ECG_Int_Event, BIT(ECG_INT_PIN));
-	gpio_add_callback(gpio_1_ecg, &gpio_cb);
+
+	// 只在第一次添加回调，避免重复添加
+	if(!gpio_cb_added)
+	{
+		gpio_init_callback(&gpio_cb, ECG_Int_Event, BIT(ECG_INT_PIN));
+		gpio_add_callback(gpio_1_ecg, &gpio_cb);
+		gpio_cb_added = true;
+	}
+
 	gpio_pin_interrupt_configure(gpio_1_ecg, ECG_INT_PIN, GPIO_INT_ENABLE | GPIO_INT_EDGE_FALLING);
 }
 
-void Max86176_start(void)
+/**
+ * @brief 重新启动 ECG 采集（不复位芯片，只刷新 FIFO 和使能 ECG）
+ * 
+ * 用于 uart_start_ecg 场景，避免频繁复位导致 PLL 失锁
+ */
+static void Max86176_RestartEcg(void)
 {
+#ifdef MAX86176_DEBUG
+	LOGD("Restarting ECG without chip reset");
+#endif
+
+	// 1. 先禁用 ECG 采集
+	Max86176_StopEcg();
+	k_sleep(K_MSEC(10));
+
+	// 2. 清除所有中断标志
+	Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf);
+
+	// 3. 刷新 FIFO - 写 1 到 FIFO_FLUSH 位 (0x0D bit7)
+	uint8_t fifo_cfg;
+	Max86176_ReadReg(0x0d, 1, &fifo_cfg);
+	Max86176_WriteReg(0x0d, fifo_cfg | 0x80);  // Set FIFO_FLUSH bit
+	k_sleep(K_MSEC(10));  // 等待 FIFO 清空
+
+	// 4. 重置批量发送计数器和相关状态
+	ecg_batch_count = 0;
+	gEcgSampleCount = 0;
+	ecg_warmup_done = false;  // 重置预热标志
+	dbg_int_count = 0;
+	dbg_work_count = 0;
+	dbg_fifo_ready_count = 0;
+	dbg_consumer_count = 0;
+
+	// 5. 重新配置中断使能寄存器
+	Max86176_WriteReg(0x80, 0x80);  // A_FULL_EN
+
+	// 6. 应用优化的 RLD 配置以增强抗干扰能力
+	Max86176_OptimizeRLD();
+
+	// 7. 启用自适应增益控制
+	Max86176_EnableAdaptiveGain(true);
+
+	// 8. 启用 GPIO 中断
+	Max86176_Int_Enable();
+
+	// 9. 启动 ECG 采集
+	Max86176_StartEcg();
+
+	// 10. 短暂延迟让系统稳定
+	k_sleep(K_MSEC(50));
+
+#ifdef MAX86176_DEBUG 
+	LOGD("ECG restart complete");
+#endif
+}
+
+void Max86176_init(void)
+{
+	ECG_gpio_Init();
+	ECG_SPI_Init();
+
+	// 初始化AFE工作队列
+	afe_work_init();
+
+	k_sleep(K_MSEC(50));
+
+	Sensor_Init();
+	// 应用优化的RLD配置以增强抗干扰能力
+	Max86176_OptimizeRLD();
+	// 启用自适应增益控制
+	Max86176_EnableAdaptiveGain(true);
+}
+
+void Max86176_start_measure(void)
+{
+	uint8_t fifo_cfg;
+
 	gpio_pin_configure(gpio_1_ecg, ECG_EN0_PIN, GPIO_OUTPUT);
 	gpio_pin_set(gpio_1_ecg, ECG_EN0_PIN, 0);
 	gpio_pin_configure(gpio_0_ecg, ECG_EN1_PIN, GPIO_OUTPUT);
@@ -928,10 +708,56 @@ void Max86176_start(void)
 	gpio_pin_set(gpio_1_ecg, ECG_I2C_CON_PIN, 0);
 	gpio_pin_configure(gpio_0_ecg, ECG_SPI_CON_PIN, GPIO_OUTPUT);
 	gpio_pin_set(gpio_0_ecg, ECG_SPI_CON_PIN, 1);
+  
+	k_sleep(K_MSEC(10));  // 等待GPIO稳定
+
+	// 先禁用中断，防止初始化过程中产生干扰
+	Max86176_Int_Disable();
+
+	// 清除所有未处理的中断标志和状态寄存器
+	ecg_int_flag = false;
+	Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf);
+
+	// 刷新FIFO - 写1到FIFO_FLUSH位(0x0D bit7)
+	Max86176_ReadReg(0x0d, 1, &fifo_cfg);
+	Max86176_WriteReg(0x0d, fifo_cfg | 0x80);  // Set FIFO_FLUSH bit
+	k_sleep(K_MSEC(10));  // 等待FIFO清空
+
+	// 重置批量发送计数器和相关状态
+	ecg_batch_count = 0;
+	gEcgSampleCount = 0;
+	ecg_warmup_done = false;  // 重置预热标志
+	dbg_int_count = 0;
+	dbg_work_count = 0;
+	dbg_fifo_ready_count = 0;
+	dbg_consumer_count = 0;
+
+	// 重新配置中断使能寄存器
+	Max86176_WriteReg(0x80, 0x80);  // A_FULL_EN
+
+	// 重新启用 GPIO 中断
+	Max86176_Int_Enable();
+
+	// 启动 ECG 采集
+	Max86176_StartEcg();
+
+	// 短暂延迟让系统稳定
+	k_sleep(K_MSEC(50));
 }
 
 void Max86176_stop(void)
 {
+	//先禁用中断，防止停止过程中产生干扰
+	Max86176_Int_Disable();
+
+	// 停止ECG采集
+	Max86176_StopEcg();
+
+	// 清除中断标志
+	ecg_int_flag = false;
+
+	// 清除状态寄存器
+	Max86176_ReadReg(0x00, NUM_STATUS_REGS, gReadBuf);
 	gpio_pin_configure(gpio_1_ecg, ECG_EN0_PIN, GPIO_OUTPUT);
 	gpio_pin_set(gpio_1_ecg, ECG_EN0_PIN, 0);
 	gpio_pin_configure(gpio_0_ecg, ECG_EN1_PIN, GPIO_OUTPUT);
@@ -943,18 +769,221 @@ void Max86176_stop(void)
 	gpio_pin_set(gpio_0_ecg, ECG_SPI_CON_PIN, 0);
 }
 
-void Max86176_init(void)
+void Max86176_start(void)
 {
-	ECG_gpio_Init();
-	ECG_SPI_Init();
+	uint8_t part_id;
 
-	// 初始化日志队列和日志线程
-	log_queue_init();
-	log_thread_init();
+#ifdef MAX86176_DEBUG
+	LOGD("begin");
+#endif
+
+	// 确保 GPIO 配置正确
+	gpio_pin_configure(gpio_1_ecg, ECG_EN0_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ecg, ECG_EN0_PIN, 0);
+	gpio_pin_configure(gpio_0_ecg, ECG_EN1_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ecg, ECG_EN1_PIN, 1);
+
+	gpio_pin_configure(gpio_1_ecg, ECG_I2C_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_1_ecg, ECG_I2C_CON_PIN, 0);
+	gpio_pin_configure(gpio_0_ecg, ECG_SPI_CON_PIN, GPIO_OUTPUT);
+	gpio_pin_set(gpio_0_ecg, ECG_SPI_CON_PIN, 1);
+
+	k_sleep(K_MSEC(10));  // 等待 GPIO 稳定
+
+	// 检查传感器是否在线（读取 ID 寄存器）
+	Max86176_ReadReg(0xff, 1, &part_id); 
+#ifdef MAX86176_DEBUG
+	LOGD("ID: 0x%02X", part_id);
+#endif
+	if(part_id != MAX86176_PART_ID)
+		return;
+
+	// 检查 PLL 是否已锁定
+	uint8_t pll_status;
+	Max86176_ReadReg(0x04, 1, &pll_status);
+	if(!(pll_status & 0x02))
+	{
+	#ifdef MAX86176_DEBUG
+		LOGD("PLL not locked! Status: 0x%02X. Re-initializing sensor...", pll_status);
+	#endif
+		//如果 PLL 未锁定，才调用完整的 Sensor_Init
+		Sensor_Init();
+	}
+	else
+	{
+	#ifdef MAX86176_DEBUG
+		LOGD("PLL already locked. Using restart mode.");
+	#endif
+		// PLL 已锁定，使用轻量级重启方式
+		Max86176_RestartEcg();
+		return;
+	}
+
+	// 初始化 AFE 工作队列
+	afe_work_init();
 
 	k_sleep(K_MSEC(50));
-	
-	Sensor_Init();
+
+	// 应用优化的 RLD 配置以增强抗干扰能力
+	Max86176_OptimizeRLD();
+
+	// 启用自适应增益控制
+	Max86176_EnableAdaptiveGain(true);
+
+	// 确保在启动前重置计数器
+	ecg_batch_count = 0;
+	gEcgSampleCount = 0;
+	ecg_warmup_done = false;  // 重置预热标志
+
+	Max86176_start_measure();
+}
+
+
+// ============ ECG增益控制实现 ============
+
+/**
+ * @brief 设置ECG增益级别
+ * @param level 增益级别 (ECG_GAIN_LOW ~ ECG_GAIN_VERY_HIGH)
+ * 
+ * INA增益映射:
+ *   0 -> 20x,  1 -> 40x,  2 -> 80x,  3 -> 160x
+ * PGA增益固定为8x
+ */
+void Max86176_SetEcgGain(ecg_gain_level_t level)
+{
+	// INA_GAIN: 00=20x, 01=40x, 10=80x, 11=160x
+	// PGA_GAIN固定为011b (8x)
+	// ECG_IPOL = 1 (正常极性)
+	uint8_t ina_gain = level;  // 直接映射: 0=20x, 1=40x, 2=80x, 3=160x
+	uint8_t ecg_config2 = (1 << 7) | (3 << 4) | (ina_gain & 0x03);
+
+	if(level > ECG_GAIN_VERY_HIGH)
+		level = ECG_GAIN_VERY_HIGH;
+
+	Max86176_WriteReg(0x91, ecg_config2);
+	adaptive_gain.current_gain = level;
+
+#ifdef MAX86176_DEBUG
+	LOGD("ECG gain set to level %d (INA=%dx, total=%dx)", level, 20 << level, (20 << level) * 8);
+#endif
+}
+
+/**
+ * @brief 获取当前ECG增益级别
+ */
+ecg_gain_level_t Max86176_GetEcgGain(void) {
+  return adaptive_gain.current_gain;
+}
+
+/**
+ * @brief 启用/禁用自适应增益控制
+ */
+void Max86176_EnableAdaptiveGain(bool enable)
+{
+	adaptive_gain.enabled = enable;
+	adaptive_gain.sample_count = 0;
+	adaptive_gain.peak_value = 0;
+
+#ifdef MAX86176_DEBUG	
+	LOGD("Adaptive gain control %s", enable ? "enabled" : "disabled");
+#endif
+}
+
+/**
+ * @brief 自适应增益处理
+ * @param ecg_value 当前ECG采样值(有符号)
+ * 
+ * 在每个ECG采样点调用此函数，会自动追踪信号幅度并在必要时调整增益
+ */
+void Max86176_AdaptiveGainProcess(int32_t ecg_value)
+{
+	if(!adaptive_gain.enabled)
+		return;
+
+	// 取绝对值追踪峰值
+	int32_t abs_value = ecg_value >= 0 ? ecg_value : -ecg_value;
+	if(abs_value > adaptive_gain.peak_value)
+	{
+		adaptive_gain.peak_value = abs_value;
+	}
+
+	adaptive_gain.sample_count++;
+
+	// 达到评估间隔时进行增益调整判断
+	if(adaptive_gain.sample_count >= adaptive_gain.adjust_interval)
+	{
+		ecg_gain_level_t new_gain = adaptive_gain.current_gain;
+
+		// 信号太弱，需要增加增益
+		if(adaptive_gain.peak_value < adaptive_gain.signal_threshold_low)
+		{
+			if(adaptive_gain.current_gain < ECG_GAIN_VERY_HIGH)
+			{
+				new_gain = adaptive_gain.current_gain + 1;
+			#ifdef MAX86176_DEBUG	
+				LOGD("ECG signal weak (peak=%d), increasing gain", adaptive_gain.peak_value);
+			#endif
+			}
+		}
+		// 信号太强(可能饱和)，需要降低增益
+		else if(adaptive_gain.peak_value > adaptive_gain.signal_threshold_high)
+		{
+			if(adaptive_gain.current_gain > ECG_GAIN_LOW)
+			{
+				new_gain = adaptive_gain.current_gain - 1;
+			#ifdef MAX86176_DEBUG	
+				LOGD("ECG signal strong (peak=%d), decreasing gain", adaptive_gain.peak_value);
+			#endif
+			}
+		}
+
+		// 如果增益需要改变，则设置新增益
+		if(new_gain != adaptive_gain.current_gain)
+		{
+			Max86176_SetEcgGain(new_gain);
+		}
+
+		// 重置计数器和峰值
+		adaptive_gain.sample_count = 0;
+		adaptive_gain.peak_value = 0;
+	}
+}
+
+/**
+ * @brief 优化RLD(右腿驱动)抗干扰配置
+ * 
+ * RLD用于减少共模干扰(如50/60Hz工频干扰)
+ * 此函数配置最优的RLD参数以增强信号质量
+ */
+void Max86176_OptimizeRLD(void)
+{
+  // 0xA8: RLD Configuration 1
+  // bit7: RLD_EN = 1 (启用RLD)
+  // bit6: RLD_MODE = 1 (使用内部反馈)
+  // bit5: RLD_OOR_RAPID = 1 (快速检测RLD超出范围)
+  // bit4: EN_RLD_OOR = 1 (启用RLD超出范围检测)
+  // bit3: ACTV_CM_P = 1 (正极参与共模检测)
+  // bit2: ACTV_CM_N = 1 (负极参与共模检测)
+  // bit1-0: RLD_GAIN = 3 (最大增益，最强共模抑制)
+  Max86176_WriteReg(0xa8, (1 << 7) | (1 << 6) | (1 << 5) | (1 << 4) | 
+                          (1 << 3) | (1 << 2) | 3);
+  
+  // 0xA9: RLD Configuration 2
+  // bit7: RLD_EXT_RES = 0 (使用内部电阻)
+  // bit6: SEL_VCM_IN = 1 (选择VCM输入)
+  // bit5-4: RLD_BW = 2 (中等带宽，平衡响应速度和稳定性)
+  // bit3-0: BODY_BIAS_DAC = 0 (无额外偏置)
+  Max86176_WriteReg(0xa9, (0 << 7) | (1 << 6) | (2 << 4) | 0);
+  
+  // 0x94: Lead Detect Configuration 2 - 优化共模抑制
+  // bit6: HI_CM_RES_EN = 1 (使用高共模输入阻抗，提高AC-LOFF精度)
+  // bit5-4: LOFF_CG_MODE = 2 (使用RLD/lead bias模式)
+  // bit3-0: LOFF_IMAG = 8 (400nA，增强导联检测灵敏度)
+  Max86176_WriteReg(0x94, (1 << 6) | (2 << 4) | 8);
+
+#ifdef MAX86176_DEBUG
+  LOGD("RLD optimization applied for better noise rejection");
+#endif
 }
 
 void Max86176_Msg_Process(void)
@@ -964,10 +993,8 @@ void Max86176_Msg_Process(void)
 	#ifdef MAX86176_DEBUG
 		LOGD("ecg int!");
 	#endif
-		//ECG_Disable_int();
 		ecg_int_flag = false;
-		//Max86176_onAfeInt();
-		//ECG_Enable_int();
+		Max86176_onAfeInt();
 	}
 }
 

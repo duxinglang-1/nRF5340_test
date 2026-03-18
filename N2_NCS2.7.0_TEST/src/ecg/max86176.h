@@ -1237,6 +1237,39 @@ typedef enum
 	NUM_ADC,
 }IX_TYPE;
 
+// ============ ECG增益控制 ============
+// ECG增益级别枚举
+typedef enum
+{
+    ECG_GAIN_LOW = 0,       // INA=20x, PGA=8x, 总增益160x (默认)
+    ECG_GAIN_MEDIUM,        // INA=40x, PGA=8x, 总增益320x
+    ECG_GAIN_HIGH,          // INA=80x, PGA=8x, 总增益640x
+    ECG_GAIN_VERY_HIGH      // INA=160x, PGA=8x, 总增益1280x
+}ecg_gain_level_t;
+
+// 自适应增益控制配置
+typedef struct
+{
+    bool enabled;                   // 是否启用自适应增益
+    ecg_gain_level_t current_gain;  // 当前增益级别
+    int32_t signal_threshold_low;   // 信号过低阈值 (需要增加增益)
+    int32_t signal_threshold_high;  // 信号过高阈值 (需要降低增益)
+    uint16_t adjust_interval;       // 增益调整间隔(采样点数)
+    uint16_t sample_count;          // 采样计数器
+    int32_t peak_value;             // 当前窗口内峰值
+}ecg_adaptive_gain_t;
+
 extern void Max86176_init(void);
 extern void Max86176_Msg_Process(void);
+// 设置ECG增益级别
+extern void Max86176_SetEcgGain(ecg_gain_level_t level);
+// 获取当前ECG增益级别
+extern ecg_gain_level_t Max86176_GetEcgGain(void);
+// 启用/禁用自适应增益控制
+extern void Max86176_EnableAdaptiveGain(bool enable);
+// 自适应增益处理(在ECG数据处理中调用)
+extern void Max86176_AdaptiveGainProcess(int32_t ecg_value);
+// 优化RLD抗干扰配置
+extern void Max86176_OptimizeRLD(void);
+
 #endif/*__MAX86176_H__*/
