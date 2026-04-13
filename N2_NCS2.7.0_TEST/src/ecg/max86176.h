@@ -1062,10 +1062,9 @@ extern bool ecg_int_flag;
 //#define FILTERORDER 				161
 #define FILTERORDER 				81
 //#define NRCOEFF (0.992) 采样频率为512
-#define NRCOEFF (0.9758)  /* 采样频率为128 */
-
-
-
+//#define NRCOEFF (0.9758)  /* 采样频率为128 */
+//#define NRCOEFF (0.8)  //IIR算法需要耗时很长时间才能平稳，目前改小值以加快计算速度
+#define NRCOEFF (0.9)
 typedef enum
 {
 	//Status:1~6
@@ -1259,9 +1258,20 @@ typedef struct
     int32_t peak_value;             // 当前窗口内峰值
 }ecg_adaptive_gain_t;
 
+// ============ 导联检测状态机 ============
+// 导联状态枚举
+typedef enum
+{
+    LEAD_STATE_OFF = 0,     // 导联脱落
+    LEAD_STATE_ON,          // 导联连接
+    LEAD_STATE_UNKNOWN      // 未知状态
+}lead_state_t;
+
 extern void Max86176_init(void);
 extern void Max86176_Msg_Process(void);
-// 设置ECG增益级别
+extern void Max86176_start(void);
+extern void Max86176_stop(void);
+// 设置 ECG 增益级别
 extern void Max86176_SetEcgGain(ecg_gain_level_t level);
 // 获取当前ECG增益级别
 extern ecg_gain_level_t Max86176_GetEcgGain(void);
@@ -1269,7 +1279,9 @@ extern ecg_gain_level_t Max86176_GetEcgGain(void);
 extern void Max86176_EnableAdaptiveGain(bool enable);
 // 自适应增益处理(在ECG数据处理中调用)
 extern void Max86176_AdaptiveGainProcess(int32_t ecg_value);
-// 优化RLD抗干扰配置
+// 优化 RLD 抗干扰配置
 extern void Max86176_OptimizeRLD(void);
+// 检查导联连接状态（返回 true 表示连接良好）
+extern bool Max86176_CheckLeadStatus(void);
 
 #endif/*__MAX86176_H__*/

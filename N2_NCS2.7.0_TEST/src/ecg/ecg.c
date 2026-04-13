@@ -12,9 +12,8 @@
 #include "logger.h"
 #include "uart.h"
 #include "ecg.h"
-#ifdef ECG_ADS1292
+#if defined(ECG_ADS1292)
 #include "ads1292.h"
-#endif
 #elif defined(ECG_MAX86176)
 #include "max86176.h"
 #endif

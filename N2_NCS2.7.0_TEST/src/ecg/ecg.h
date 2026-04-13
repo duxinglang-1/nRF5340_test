@@ -13,7 +13,10 @@
 #define COM_ECG_SET_CLOSE		"CLOSE:"
 #define COM_ECG_GET_INFOR		"INFOR:"
 #define COM_ECG_GET_DATA		"ECG_DATA:"
-
+#define COM_ECG_LEAD_STATUS		"LEAD_STATUS:"
+#define COM_ECG_LEAD_OFF		"LEAD_OFF:"
+#define COM_ECG_LEAD_ON		    "LEAD_ON:"
+#define COM_ECG_LEAD_TIME_OUT	"LEAD_TIME_OUT:"
 //#define ECG_ADS1292
 #define ECG_MAX86176
 #endif/*__ECG_H__*/
