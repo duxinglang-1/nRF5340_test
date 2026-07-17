@@ -252,7 +252,7 @@ static void Sensor_Init(void) // call this on power up
 		if((gReadBuf[0] & 0x01) == 0x00) // This bit then automatically becomes ‘0’ after thereset sequence is completed.
 			break;
 	}
-  k_sleep(K_MSEC(100)); // 等待模拟电路稳定
+  	k_sleep(K_MSEC(100)); // 等待模拟电路稳定
 	uint8_t readbuf[6];
 	Max86176_ReadReg(0x00, 6, readbuf); // 从0x00开始读6字节
 #ifdef MAX86176_DEBUG
