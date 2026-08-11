@@ -27,6 +27,11 @@ void ECG_Start(void)
 #endif
 }
 
+void ECG_Set_WearStatus(char *status)
+{
+	Max86176_Set_WearStatus(status);		
+}
+
 void ECG_Stop(void)
 {
 #ifdef ECG_ADS1292
@@ -61,6 +66,19 @@ void UartECGEventHandle(uint8_t *data, uint32_t data_len)
 		else if((ptr1 = strstr(ptr, COM_ECG_SET_CLOSE)) != NULL)
 		{
 			ECG_Stop();
+		}
+		else if((ptr1 = strstr(ptr, COM_ECG_WEAR_STATUS)) != NULL)
+		{
+			//Ω‚ŒˆWEAR_STATUS√¸¡Ó≤Œ ˝
+			ptr1 += strlen(COM_ECG_WEAR_STATUS);
+			if(strstr(ptr1, COM_ECG_WEAR_LEFT) != NULL)
+			{
+				ECG_Set_WearStatus(COM_ECG_WEAR_LEFT);
+			}
+			else if(strstr(ptr1, COM_ECG_WEAR_RIGHT) != NULL)
+			{
+				ECG_Set_WearStatus(COM_ECG_WEAR_RIGHT);
+			}
 		}
 	}
 }

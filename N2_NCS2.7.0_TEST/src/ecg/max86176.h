@@ -33,6 +33,7 @@ void ECG_Sensor_Init(void);
 void Max86176_onAfeInt(void);
 
 extern bool ecg_int_flag;
+extern bool max86176_power_ready;
 
 #define ECG_CS_PIN			24
 #define ECG_INT_PIN			9
@@ -1064,7 +1065,9 @@ extern bool ecg_int_flag;
 //#define NRCOEFF (0.992) 采样频率为512
 //#define NRCOEFF (0.9758)  /* 采样频率为128 */
 //#define NRCOEFF (0.8)  //IIR算法需要耗时很长时间才能平稳，目前改小值以加快计算速度
-#define NRCOEFF (0.9)
+//#define NRCOEFF (0.975)
+#define ECG_QRS_HP_ALPHA_Q15			32604
+#define ECG_DISPLAY_HP_ALPHA_Q15		31975
 typedef enum
 {
 	//Status:1~6
@@ -1256,6 +1259,9 @@ typedef struct
     uint16_t adjust_interval;       // 增益调整间隔(采样点数)
     uint16_t sample_count;          // 采样计数器
     int32_t peak_value;             // 当前窗口内峰值
+    uint64_t abs_sum;               // 当前窗口内 |x| 累加
+    uint16_t high_count;            // 当前窗口内超过 high 阈值的次数
+    uint16_t holdoff_count;         // 增益切换后抑制窗口(采样点数)
 }ecg_adaptive_gain_t;
 
 // ============ 导联检测状态机 ============
@@ -1283,5 +1289,6 @@ extern void Max86176_AdaptiveGainProcess(int32_t ecg_value);
 extern void Max86176_OptimizeRLD(void);
 // 检查导联连接状态（返回 true 表示连接良好）
 extern bool Max86176_CheckLeadStatus(void);
+extern bool Max86176_CheckDcLeadOffStatus(void);
 
 #endif/*__MAX86176_H__*/

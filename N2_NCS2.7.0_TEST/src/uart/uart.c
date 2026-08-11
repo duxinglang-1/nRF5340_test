@@ -300,6 +300,11 @@ void MapcsSendData(UART_DATA_TYPE type, uint8_t *data, uint32_t datalen)
 	}
 }
 
+void MapcsSendCacheClear(void)
+{
+	delete_all_from_cache(&uart_mapcs_send_cache);
+}
+
 void UartMapcsReceData(void)
 {
 	uint8_t data_type,*p_data;

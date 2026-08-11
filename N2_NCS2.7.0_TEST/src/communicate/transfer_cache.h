@@ -46,5 +46,6 @@ typedef struct datanode DataNode;
 extern bool add_data_into_cache(CacheInfo *data_cache, uint8_t *data, uint32_t len, DATA_TYPE type);
 extern bool get_data_from_cache(CacheInfo *data_cache, uint8_t **buf, uint32_t *len, DATA_TYPE *type);
 extern bool delete_data_from_cache(CacheInfo *data_cache);
+extern bool delete_all_from_cache(CacheInfo *data_cache);
 
 #endif/*__TRANSFER_CACHE_H__*/
